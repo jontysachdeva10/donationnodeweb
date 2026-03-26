@@ -1,0 +1,65 @@
+name: PR Review Playbook Context Preparer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  prepare-context:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        uses: cli/cli@v2
+
+      - name: Extract PR metadata
+        id: meta
+        run: |
+          echo "PR_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q '.title')" >> $GITHUB_OUTPUT
+          echo "PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body')" >> $GITHUB_OUTPUT
+
+      - name: Extract PR diff
+        run: gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+
+      - name: Extract changed files
+        run: gh pr view ${{ github.event.pull_request.number }} --json files -q '.files[].path' > changed_files.txt
+
+      - name: Prepare Context Bundle
+        id: bundle
+        run: |
+          {
+            echo "### 🤖 Bob PR Review Playbook — Context Bundle"
+            echo ""
+            echo "**PR Title:**"
+            echo "${{ steps.meta.outputs.PR_TITLE }}"
+            echo ""
+            echo "**PR Description:**"
+            echo "${{ steps.meta.outputs.PR_BODY }}"
+            echo ""
+            echo "**Changed Files:**"
+            cat changed_files.txt | sed 's/^/- /'
+            echo ""
+            echo "**Diff:**"
+            echo "\`\`\`diff"
+            cat pr.diff
+            echo "\`\`\`"
+            echo ""
+            echo "### 📘 How to Run the PR Review Playbook in Bob"
+            echo "1. Copy everything inside this PR comment."
+            echo "2. Open Bob."
+            echo "3. Paste the full context along with this instruction:"
+            echo ""
+            echo "> Review this PR using the Playbook defined in:"
+            echo "> \`bob/pr_review_playbook.yaml\`"
+            echo "> Apply all passes (intent, security, correctness, API, tests, performance, documentation)"
+            echo "> After the summary, ask me if I want auto-generated fixes."
+            echo ""
+            echo "### 📌 Why this comment exists"
+            echo "Bob API is not available in this environment. Instead, this workflow prepares a structured context package that Bob can consume manually for full multi-pass analysis."
+          } > context.md
+
+      - name: Post Context Bundle to PR
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file context.md
