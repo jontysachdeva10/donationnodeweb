@@ -19,23 +19,27 @@ jobs:
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
             sudo dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
           sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) \
-            signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] \
-            https://cli.github.com/packages stable main" | \
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
             sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt update
           sudo apt install gh -y
 
       - name: Extract PR metadata
         id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "PR_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q '.title')" >> $GITHUB_OUTPUT
-          echo "PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body')" >> $GITHUB_OUTPUT
+          echo "PR_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q .title)" >> $GITHUB_OUTPUT
+          echo "PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q .body)" >> $GITHUB_OUTPUT
 
       - name: Extract PR diff
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh pr diff ${{ github.event.pull_request.number }} > pr.diff
 
       - name: Extract changed files
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh pr view ${{ github.event.pull_request.number }} --json files -q '.files[].path' > changed_files.txt
 
       - name: Prepare Context Bundle
@@ -50,7 +54,7 @@ jobs:
             echo "${{ steps.meta.outputs.PR_BODY }}"
             echo ""
             echo "**Changed Files:**"
-            cat changed_files.txt | sed 's/^/- /'
+            sed 's/^/- /' changed_files.txt
             echo ""
             echo "**Diff:**"
             echo "\`\`\`diff"
@@ -58,9 +62,12 @@ jobs:
             echo "\`\`\`"
             echo ""
             echo "### 📘 How to Run in Bob"
-            echo "Copy/paste this entire content into Bob with:"
+            echo "Copy/paste this entire content into Bob along with:"
             echo "> Review this PR using the Playbook at bob/pr_review_playbook.yaml"
+            echo "> Apply all passes."
           } > context.md
 
       - name: Post Context Bundle to PR
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh pr comment ${{ github.event.pull_request.number }} --body-file context.md
