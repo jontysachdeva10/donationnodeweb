@@ -1,0 +1,79 @@
+name: PR Review Playbook
+version: 1.0
+
+description: >
+  Multi-pass PR review framework enforcing secure coding, correctness,
+  API stability, testing, performance and documentation standards.
+
+passes:
+
+  intent:
+    summary: "Determine what the PR is trying to achieve."
+    checks:
+      - "Identify purpose from title, description, and diff."
+      - "Detect functional areas impacted."
+
+  security:
+    summary: "Prevent vulnerabilities by enforcing secure coding practices."
+    checks:
+      - "No usage of eval, new Function, Function(string)."
+      - "No unsafe DOM APIs (innerHTML, insertAdjacentHTML)."
+      - "Input must be validated before processing."
+      - "Detect injection risks (SQL, HTML, regex, file path)."
+      - "No secrets or credentials added in this diff."
+      - "Sanitization must be whitelist-based, not blacklist-based."
+
+  correctness:
+    summary: "Ensure new logic is correct and robust."
+    checks:
+      - "All branches and conditions should be deterministic."
+      - "Null/undefined inputs must be handled."
+      - "Return types must remain consistent."
+      - "Edge-case handling must be preserved or improved."
+
+  api:
+    summary: "Prevent breaking API or behavior changes."
+    checks:
+      - "No changes to return shapes of public APIs unless documented."
+      - "Status codes must remain consistent."
+      - "Any functional behavior change must include migration notes."
+
+  tests:
+    summary: "Verify test adequacy and regression protection."
+    checks:
+      - "Positive-path tests must exist for new logic."
+      - "Negative-path tests must exist (invalid input, error cases)."
+      - "Regression tests required if PR fixes a bug."
+      - "Ensure branches introduced by 'if/else' are covered."
+
+  performance:
+    summary: "Check for performance regressions."
+    checks:
+      - "No heavy loops or nested loops introduced."
+      - "Regex must not be over-greedy or inefficient."
+      - "Avoid repeated computation in hot paths."
+
+  documentation:
+    summary: "Ensure code behavior is documented."
+    checks:
+      - "JSDoc/JavaDoc updated for changed functions."
+      - "Comments reflect new behavior."
+      - "README or API docs updated if endpoint behavior changes."
+
+decision_logic:
+  block_if:
+    - "Any security violation"
+    - "Missing required negative-path tests"
+    - "Breaking API change detected"
+    - "Function changed but documentation missing"
+    - "Null/undefined handling missing"
+  warn_if:
+    - "Performance inefficiencies"
+    - "Missing optional tests"
+    - "Missing comments"
+  approve_if_no_blockers: true
+
+post_review_prompt: |
+  If blockers exist, ask:
+  "Would you like me to generate automatic fixes and patches for these issues? Reply 'yes'."
+``
