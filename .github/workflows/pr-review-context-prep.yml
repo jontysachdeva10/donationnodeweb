@@ -13,7 +13,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install GitHub CLI
-        uses: cli/cli@v2
+        run: |
+          type -p curl >/dev/null || sudo apt install curl -y
+          sudo mkdir -p -m 755 /etc/apt/keyrings
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+            sudo dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) \
+            signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] \
+            https://cli.github.com/packages stable main" | \
+            sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
 
       - name: Extract PR metadata
         id: meta
@@ -28,7 +39,6 @@ jobs:
         run: gh pr view ${{ github.event.pull_request.number }} --json files -q '.files[].path' > changed_files.txt
 
       - name: Prepare Context Bundle
-        id: bundle
         run: |
           {
             echo "### 🤖 Bob PR Review Playbook — Context Bundle"
@@ -47,18 +57,9 @@ jobs:
             cat pr.diff
             echo "\`\`\`"
             echo ""
-            echo "### 📘 How to Run the PR Review Playbook in Bob"
-            echo "1. Copy everything inside this PR comment."
-            echo "2. Open Bob."
-            echo "3. Paste the full context along with this instruction:"
-            echo ""
-            echo "> Review this PR using the Playbook defined in:"
-            echo "> \`bob/pr_review_playbook.yaml\`"
-            echo "> Apply all passes (intent, security, correctness, API, tests, performance, documentation)"
-            echo "> After the summary, ask me if I want auto-generated fixes."
-            echo ""
-            echo "### 📌 Why this comment exists"
-            echo "Bob API is not available in this environment. Instead, this workflow prepares a structured context package that Bob can consume manually for full multi-pass analysis."
+            echo "### 📘 How to Run in Bob"
+            echo "Copy/paste this entire content into Bob with:"
+            echo "> Review this PR using the Playbook at bob/pr_review_playbook.yaml"
           } > context.md
 
       - name: Post Context Bundle to PR
