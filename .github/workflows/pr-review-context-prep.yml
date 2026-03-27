@@ -12,11 +12,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      # Installation steps - only run on PR opened or reopened
       - name: Setup Node.js
+        if: github.event.action == 'opened' || github.event.action == 'reopened'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      
       - name: Install GitHub CLI
+        if: github.event.action == 'opened' || github.event.action == 'reopened'
         run: |
           type -p curl >/dev/null || sudo apt install curl -y
           sudo mkdir -p -m 755 /etc/apt/keyrings
@@ -27,6 +32,14 @@ jobs:
             sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt update
           sudo apt install gh -y
+      
+      - name: Install BobShell
+        if: github.event.action == 'opened' || github.event.action == 'reopened'
+        run: |
+          curl -s https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh | bash -s -- --pm npm
+          echo "BobShell installed."
+      
+      # Review steps - run on all PR events
       - name: Extract PR metadata
         id: meta
         env:
@@ -36,24 +49,24 @@ jobs:
           BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q .body)
           echo "PR_TITLE=$TITLE" >> $GITHUB_OUTPUT
           echo "PR_BODY=$BODY" >> $GITHUB_OUTPUT
+      
       - name: Extract PR diff
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+      
       - name: Extract changed files
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr view ${{ github.event.pull_request.number }} --json files -q '.files[].path' > changed_files.txt
-      - name: Install BobShell
-        run: |
-          curl -s https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh | bash -s -- --pm npm
-          echo "BobShell installed."
+      
       - name: Export BobShell API Key
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
           echo "BOBSHELL_API_KEY exported."
+      
       - name: Run BobShell Review
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
@@ -94,6 +107,7 @@ jobs:
           At the end: Ask 'Would you like fixes generated?'"
 
           bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
+      
       - name: Post BobShell Output to PR
         env:
           GH_TOKEN: ${{ github.token }}
