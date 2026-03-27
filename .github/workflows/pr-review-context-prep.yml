@@ -85,6 +85,9 @@ jobs:
           Diff:
           $(cat pr.diff)
 
+          IMPORTANT: Do NOT include any preliminary analysis, thinking process, or "Let me analyze" statements.
+          Start DIRECTLY with the structured review output below. No introductory text.
+
           Use rules from bob/pr_review_playbook.yaml.
           Run ALL passes:
           - Intent
@@ -95,21 +98,49 @@ jobs:
           - Performance
           - Documentation
 
-          Produce a structured review with THREE sections:
+          Produce a structured review with THREE sections (start immediately with Section 1 heading):
 
           SECTION 1 - Summary (for PR comment):
-          - Intent Summary
-          - Issue Grouping (Critical, High, Medium, Low)
-          - Security Findings
-          - Breaking Changes
-          - Required Tests
-          - Final Verdict
-          - Fix Suggestions
+          IMPORTANT: Do NOT include any INLINE| formatted comments in this section.
+          Only provide high-level summaries and descriptions.
+          
+          Include:
+          - Intent Summary (what the PR does)
+          - Issue Grouping (Critical, High, Medium, Low) - DESCRIBE the issues, don't list INLINE| comments
+          - Security Findings (summary only)
+          - Breaking Changes (if any)
+          - Required Tests (if missing)
+          - Suggested Code Fixes (a dedicated section with specific code examples showing before/after for major issues)
+          - Final Verdict (Approve/Request Changes/Comment)
+          
+          For the Suggested Code Fixes section, use this format:
+          ## Suggested Code Fixes
+          
+          ### Fix 1: [Issue Title]
+          **File**: `path/to/file.ts:line`
+          **Severity**: Critical/High/Medium/Low
+          **Issue**: Brief description
+          
+          **Current Code**:
+          ```language
+          // problematic code here
+          ```
+          
+          **Suggested Fix**:
+          ```language
+          // fixed code here
+          ```
+          
+          **Why**: Explanation of why this fix is needed
 
           SECTION 2 - Inline Comments:
-          After your summary, add a section titled '## Inline Review Comments'
+          IMPORTANT: This is the ONLY section where INLINE| formatted comments should appear.
+          
+          Add a section titled '## Inline Review Comments'
           For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
           INLINE|filepath|line_number|severity|your detailed comment here
+          
+          Do NOT include these INLINE| comments anywhere else in the output.
 
           Example:
           INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability
