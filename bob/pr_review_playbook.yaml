@@ -1,79 +1,90 @@
 name: PR Review Playbook
-version: 1.0
+version: 2.0
 
-description: >
-  Multi-pass PR review framework enforcing secure coding, correctness,
-  API stability, testing, performance and documentation standards.
+output_format:
+  enforce_sections: true
+  sections:
+    - "Intent Summary"
+    - "High-Level Change Analysis"
+    - "Critical Issues (Blockers)"
+    - "High Severity Issues"
+    - "Medium Severity Issues"
+    - "Low Severity Issues"
+    - "Security Findings"
+    - "Required Tests"
+    - "Breaking Changes Audit"
+    - "Performance Observations"
+    - "Documentation Requirements"
+    - "Affected Files Summary"
+    - "Positive Engineering Practices"
+    - "Confidence Level"
+    - "Final Verdict"
+    - "Fix Suggestions"
+    - "Auto-Generated Patch (Optional)"
+
+force_tone:
+  concise: true
+  technical: true
+  no-fluff: true
+  no-generic-advice: true
+  always-use-specific-file-paths: true
+
+rules:
+  blockers:
+    - "Security vulnerability"
+    - "Function returns unresolved promises"
+    - "Breaking API change without migration"
+    - "Incorrect error handling returning success"
+    - "Hardcoded secrets"
+    - "Missing required input validation"
+    - "Duplicate entity / data conflict unhandled"
+  
+  high_severity:
+    - "Incorrect logic"
+    - "Missing required awaits"
+    - "Uncaught exceptions"
+    - "Bad return shape"
+  
+  medium_severity:
+    - "Wrong HTTP code"
+    - "Missing edge case tests"
+    - "Performance inefficiency"
+  
+  low_severity:
+    - "Commented-out code"
+    - "Mixed imports"
+    - "Missing JSDoc"
+    - "Minor formatting"
 
 passes:
+  intent:
+    required: true
+    description: "Identify what the PR is intended to achieve."
 
-  intent:
-    summary: "Determine what the PR is trying to achieve."
-    checks:
-      - "Identify purpose from title, description, and diff."
-      - "Detect functional areas impacted."
+  diff_analysis:
+    required: true
 
-  security:
-    summary: "Prevent vulnerabilities by enforcing secure coding practices."
-    checks:
-      - "No usage of eval, new Function, Function(string)."
-      - "No unsafe DOM APIs (innerHTML, insertAdjacentHTML)."
-      - "Input must be validated before processing."
-      - "Detect injection risks (SQL, HTML, regex, file path)."
-      - "No secrets or credentials added in this diff."
-      - "Sanitization must be whitelist-based, not blacklist-based."
+  security:
+    required: true
+    
+  correctness:
+    required: true
 
-  correctness:
-    summary: "Ensure new logic is correct and robust."
-    checks:
-      - "All branches and conditions should be deterministic."
-      - "Null/undefined inputs must be handled."
-      - "Return types must remain consistent."
-      - "Edge-case handling must be preserved or improved."
+  api_stability:
+    required: true
 
-  api:
-    summary: "Prevent breaking API or behavior changes."
-    checks:
-      - "No changes to return shapes of public APIs unless documented."
-      - "Status codes must remain consistent."
-      - "Any functional behavior change must include migration notes."
+  tests:
+    required: true
+    include_required_tests: true
 
-  tests:
-    summary: "Verify test adequacy and regression protection."
-    checks:
-      - "Positive-path tests must exist for new logic."
-      - "Negative-path tests must exist (invalid input, error cases)."
-      - "Regression tests required if PR fixes a bug."
-      - "Ensure branches introduced by 'if/else' are covered."
-
-  performance:
-    summary: "Check for performance regressions."
-    checks:
-      - "No heavy loops or nested loops introduced."
-      - "Regex must not be over-greedy or inefficient."
-      - "Avoid repeated computation in hot paths."
-
-  documentation:
-    summary: "Ensure code behavior is documented."
-    checks:
-      - "JSDoc/JavaDoc updated for changed functions."
-      - "Comments reflect new behavior."
-      - "README or API docs updated if endpoint behavior changes."
+  documentation:
+    required: true
 
 decision_logic:
-  block_if:
-    - "Any security violation"
-    - "Missing required negative-path tests"
-    - "Breaking API change detected"
-    - "Function changed but documentation missing"
-    - "Null/undefined handling missing"
-  warn_if:
-    - "Performance inefficiencies"
-    - "Missing optional tests"
-    - "Missing comments"
-  approve_if_no_blockers: true
+  if_any_blockers: "BLOCK"
+  if_high_severity_more_than_two: "WARN"
+  else: "APPROVE"
 
 post_review_prompt: |
-  If blockers exist, ask:
-  "Would you like me to generate automatic fixes and patches for these issues? Reply 'yes'."
-``
+  After presenting the full structured review, ask:
+  "Would you like me to generate code fixes, patches, and missing tests based on the blockers and severe issues? Reply 'yes'."
