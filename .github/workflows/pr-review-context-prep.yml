@@ -106,16 +106,39 @@ jobs:
           - Final Verdict
           - Fix Suggestions
 
-          SECTION 2 - Inline Comments:
+          SECTION 2 - Inline Comments with Suggested Fixes:
           After your summary, add a section titled '## Inline Review Comments'
-          For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
-          INLINE|filepath|line_number|severity|your detailed comment here
+          For EACH specific issue you find in the code, provide a comment in this EXACT format:
+          INLINE|filepath|line_number|severity|Issue description
+
+          SUGGESTED_FIX|filepath|line_number
+          ```language
+          // Suggested code fix here
+          ```
 
           Example:
-          INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability
+          INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability. Use parameterized queries instead.
+
+          SUGGESTED_FIX|src/app.js|42
+          ```javascript
+          const query = 'SELECT * FROM users WHERE id = ?';
+          db.query(query, [userId], (err, results) => {
+            // handle results
+          });
+          ```
+
           INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
 
-          Make sure to include the actual file paths from the changed files list and specific line numbers where issues occur.
+          SUGGESTED_FIX|src/utils.js|15
+          ```javascript
+          const maxRetries = 3;
+          ```
+
+          Make sure to:
+          - Include the actual file paths from the changed files list
+          - Provide specific line numbers where issues occur
+          - Include a code block with the suggested fix using proper syntax highlighting
+          - Show enough context in the fix so it's clear what needs to be changed
 
           SECTION 3 - Copy-Paste Fix Prompt:
           At the end, create a section titled '## 🔧 Ready-to-Use Fix Prompt'
@@ -167,34 +190,116 @@ jobs:
           cat bob_review_output.md
           echo "=== End Bob Output ==="
       
-      - name: Post Inline Review Comments
+      - name: Post Inline Review Comments with Suggested Fixes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Get the commit SHA
           COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
           
-          # Extract and parse inline comments
-          grep "^INLINE|" bob_review_output.md | while IFS='|' read -r prefix filepath line_num severity comment; do
-            if [[ -n "$filepath" ]] && [[ -n "$line_num" ]] && [[ "$line_num" =~ ^[0-9]+$ ]]; then
-              echo "Posting comment to $filepath:$line_num - [$severity] $comment"
+          # Create a temporary file to store processed comments
+          > inline_comments_processed.txt
+          
+          # Read the entire output and process it
+          in_code_block=false
+          current_fix=""
+          current_filepath=""
+          current_line=""
+          
+          while IFS= read -r line; do
+            # Check if this is an INLINE comment
+            if [[ "$line" =~ ^INLINE\|(.+)\|([0-9]+)\|(.+)\|(.+)$ ]]; then
+              filepath="${BASH_REMATCH[1]}"
+              line_num="${BASH_REMATCH[2]}"
+              severity="${BASH_REMATCH[3]}"
+              comment="${BASH_REMATCH[4]}"
               
-              # Post review comment using GitHub API
-              gh api \
-                --method POST \
-                -H "Accept: application/vnd.github+json" \
-                /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-                -f body="**[$severity]** $comment" \
-                -f commit_id="$COMMIT_SHA" \
-                -f path="$filepath" \
-                -F line="$line_num" \
-                || echo "⚠️ Failed to post comment for $filepath:$line_num"
+              echo "INLINE|$filepath|$line_num|$severity|$comment" >> inline_comments_processed.txt
+              current_filepath="$filepath"
+              current_line="$line_num"
+              
+            # Check if this is a SUGGESTED_FIX marker
+            elif [[ "$line" =~ ^SUGGESTED_FIX\|(.+)\|([0-9]+)$ ]]; then
+              current_fix=""
+              in_code_block=false
+              
+            # Check if we're entering a code block
+            elif [[ "$line" =~ ^\`\`\` ]] && [[ -z "$current_fix" ]]; then
+              in_code_block=true
+              current_fix="$line"$'\n'
+              
+            # Check if we're exiting a code block
+            elif [[ "$line" =~ ^\`\`\`$ ]] && [[ -n "$current_fix" ]]; then
+              current_fix+="$line"
+              echo "FIX|$current_filepath|$current_line|$current_fix" >> inline_comments_processed.txt
+              in_code_block=false
+              current_fix=""
+              
+            # Collect code block content
+            elif [[ "$in_code_block" == true ]]; then
+              current_fix+="$line"$'\n'
             fi
-          done
+          done < bob_review_output.md
+          
+          # Now post the comments with their fixes
+          current_comment=""
+          current_fix=""
+          
+          while IFS='|' read -r type filepath line_num severity_or_fix rest; do
+            if [[ "$type" == "INLINE" ]]; then
+              # If we have a previous comment with fix, post it
+              if [[ -n "$current_comment" ]]; then
+                BODY="$current_comment"
+                if [[ -n "$current_fix" ]]; then
+                  BODY="$BODY"$'\n\n'"### 💡 Suggested Fix:"$'\n'"$current_fix"
+                fi
+                
+                echo "Posting comment to $prev_filepath:$prev_line"
+                gh api \
+                  --method POST \
+                  -H "Accept: application/vnd.github+json" \
+                  /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+                  -f body="$BODY" \
+                  -f commit_id="$COMMIT_SHA" \
+                  -f path="$prev_filepath" \
+                  -F line="$prev_line" \
+                  || echo "⚠️ Failed to post comment for $prev_filepath:$prev_line"
+              fi
+              
+              # Start new comment
+              current_comment="**[$severity_or_fix]** $rest"
+              current_fix=""
+              prev_filepath="$filepath"
+              prev_line="$line_num"
+              
+            elif [[ "$type" == "FIX" ]]; then
+              # Store the fix for the current comment
+              current_fix="$severity_or_fix"
+            fi
+          done < inline_comments_processed.txt
+          
+          # Post the last comment if exists
+          if [[ -n "$current_comment" ]]; then
+            BODY="$current_comment"
+            if [[ -n "$current_fix" ]]; then
+              BODY="$BODY"$'\n\n'"### 💡 Suggested Fix:"$'\n'"$current_fix"
+            fi
+            
+            echo "Posting comment to $prev_filepath:$prev_line"
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+              -f body="$BODY" \
+              -f commit_id="$COMMIT_SHA" \
+              -f path="$prev_filepath" \
+              -F line="$prev_line" \
+              || echo "⚠️ Failed to post comment for $prev_filepath:$prev_line"
+          fi
           
           # Count how many inline comments were found
-          INLINE_COUNT=$(grep -c "^INLINE|" bob_review_output.md || echo "0")
-          echo "Found $INLINE_COUNT inline comments to post"
+          INLINE_COUNT=$(grep -c "^INLINE|" inline_comments_processed.txt || echo "0")
+          echo "Found $INLINE_COUNT inline comments with suggested fixes to post"
       
       - name: Create Labels if Not Exist
         env:
