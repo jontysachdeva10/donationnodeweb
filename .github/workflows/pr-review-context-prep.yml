@@ -97,9 +97,9 @@ jobs:
           - Performance
           - Documentation
 
-          Produce a structured review with THREE sections (start immediately with Section 1 heading):
+          Produce a structured review with THREE sections using EXACTLY these headers (copy them character-by-character):
 
-          SECTION 1 - Summary (for PR comment):
+          ## 📋 Pull Request Summary
           IMPORTANT: Do NOT include any INLINE| formatted comments in this section.
           Only provide high-level summaries and descriptions.
           
@@ -109,26 +109,9 @@ jobs:
           - Security Findings (summary only)
           - Breaking Changes (if any)
           - Required Tests (if missing)
-          - Suggested Code Fixes (a dedicated section with specific code examples showing before/after for major issues)
           - Final Verdict (Approve/Request Changes/Comment)
-          
-          For the Suggested Code Fixes section, use this format:
-          ## Suggested Code Fixes
-          
-          ### Fix 1: [Issue Title]
-          **File**: path/to/file.ts:line
-          **Severity**: Critical/High/Medium/Low
-          **Issue**: Brief description
-          
-          **Current Code**:
-          (code block with problematic code)
-          
-          **Suggested Fix**:
-          (code block with fixed code)
-          
-          **Why**: Explanation of why this fix is needed
 
-          SECTION 2 - Inline Comments (INTERNAL USE ONLY - NOT FOR PR COMMENT):
+          ## 💬 Inline Comments (INTERNAL USE ONLY)
           IMPORTANT: This section will NOT be posted to the PR comment. It's only for generating inline review comments.
           
           For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
@@ -140,12 +123,31 @@ jobs:
 
           Make sure to include the actual file paths from the changed files list and specific line numbers where issues occur.
 
-          SECTION 3 - Copy-Paste Fix Prompt:
-          At the end, create a section titled '## 🔧 Ready-to-Use Fix Prompt'
+          ## 🔧 Suggested Code Fixes
           Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
           
-          Format it as a code block with clear instructions:
+          For each fix, use this format:
+          
+          ### Fix 1: [Issue Title]
+          **File**: path/to/file.ts:line
+          **Severity**: Critical/High/Medium/Low
+          **Issue**: Brief description
+          
+          **Current Code**:
+          \`\`\`language
+          (code block with problematic code)
           \`\`\`
+          
+          **Suggested Fix**:
+          \`\`\`language
+          (code block with fixed code)
+          \`\`\`
+          
+          **Why**: Explanation of why this fix is needed
+          
+          At the end of this section, include a ready-to-use prompt:
+          
+          \`\`\`markdown
           Please fix the following issues found in the PR review:
 
           [List each issue with:
@@ -187,18 +189,43 @@ jobs:
       
       - name: Extract Summary Section (without Section 2)
         run: |
-          # Extract everything before Section 2 (Inline Comments)
-          sed '/SECTION 2 - Inline Comments/,$d' bob_review_output.md > bob_summary.md
+          python3 << 'PYTHON_SCRIPT'
+          with open('bob_review_output.md', 'r') as f:
+              content = f.read()
           
-          # If Section 2 marker not found, extract until "INLINE|" appears
-          if [ ! -s bob_summary.md ]; then
-            sed '/^INLINE|/,$d' bob_review_output.md > bob_summary.md
-          fi
+          lines = content.split('\n')
+          filtered_lines = []
+          skip_section = False
           
-          # If still empty, use the whole output
-          if [ ! -s bob_summary.md ]; then
-            cp bob_review_output.md bob_summary.md
-          fi
+          for line in lines:
+              # Start skipping when we hit Section 2 header
+              if '💬 Inline Comments' in line or 'SECTION 2' in line:
+                  skip_section = True
+                  continue
+              
+              # Stop skipping when we hit Section 3 header
+              if '🔧 Suggested Code Fixes' in line or 'SECTION 3' in line:
+                  skip_section = False
+              
+              # Skip INLINE| formatted lines
+              if line.startswith('INLINE|'):
+                  continue
+              
+              # Skip SUGGESTED_FIX| formatted lines
+              if line.startswith('SUGGESTED_FIX|'):
+                  continue
+              
+              # Add line if we're not in skip mode
+              if not skip_section:
+                  filtered_lines.append(line)
+          
+          # Write filtered content
+          with open('bob_summary.md', 'w') as f:
+              f.write('\n'.join(filtered_lines))
+          
+          print(f"Original lines: {len(lines)}")
+          print(f"Filtered lines: {len(filtered_lines)}")
+          PYTHON_SCRIPT
       
       - name: Post Summary to PR
         env:
