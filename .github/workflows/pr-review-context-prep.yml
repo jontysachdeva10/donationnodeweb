@@ -159,6 +159,48 @@ jobs:
 
           ---
 
+          ### 📝 Copy-Paste Prompt to Fix All Issues
+
+          Generate a comprehensive, ready-to-use prompt that developers can copy and paste directly into their IDE to fix all the issues found in this review.
+
+          Format it as a markdown code block:
+
+          ```markdown
+          Please fix the following issues found in the PR review:
+
+          ## Critical Issues
+          1. **[File:Line]** - [Issue description]
+             - Current problem: [Brief explanation]
+             - Required fix: [What needs to be done]
+
+          2. **[File:Line]** - [Issue description]
+             - Current problem: [Brief explanation]
+             - Required fix: [What needs to be done]
+
+          ## High Priority Issues
+          [Same format as above]
+
+          ## Medium Priority Issues
+          [Same format as above]
+
+          ## Changed Files in This PR:
+          CHANGED_FILES_PLACEHOLDER
+
+          ## Instructions:
+          - Fix all Critical issues first (they are blockers)
+          - Then address High priority issues
+          - Ensure all changes maintain:
+            * Code style consistency
+            * Existing functionality
+            * Test coverage
+            * Proper error handling
+            * Security best practices
+          - Add tests for any new functionality
+          - Update documentation if needed
+          ```
+
+          ---
+
           ## 💬 Inline Comments (INTERNAL USE ONLY)
 
           IMPORTANT: This section will NOT appear in the PR comment. It's only used to generate inline code review comments.
