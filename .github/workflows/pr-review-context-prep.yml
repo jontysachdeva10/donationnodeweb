@@ -117,19 +117,15 @@ jobs:
           ## Suggested Code Fixes
           
           ### Fix 1: [Issue Title]
-          **File**: `path/to/file.ts:line`
+          **File**: path/to/file.ts:line
           **Severity**: Critical/High/Medium/Low
           **Issue**: Brief description
           
           **Current Code**:
-          ```language
-          // problematic code here
-          ```
+          (code block with problematic code)
           
           **Suggested Fix**:
-          ```language
-          // fixed code here
-          ```
+          (code block with fixed code)
           
           **Why**: Explanation of why this fix is needed
 
