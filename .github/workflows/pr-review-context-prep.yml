@@ -126,6 +126,32 @@ jobs:
           ### ✅ Test Coverage
           Assessment of test coverage and recommendations.
 
+          ### 🔧 Suggested Code Fixes
+
+          For the most critical and high-priority issues, provide specific code fix suggestions:
+
+          #### Fix 1: [Issue Title]
+          **File**: `path/to/file.ts:line`
+          **Severity**: Critical/High
+          **Issue**: Brief description of the problem
+
+          **Current Code**:
+          ```language
+          // Show the problematic code
+          ```
+
+          **Suggested Fix**:
+          ```language
+          // Show the corrected code
+          ```
+
+          **Why**: Explanation of why this fix is needed and what it improves.
+
+          ---
+
+          #### Fix 2: [Issue Title]
+          (Repeat the same structure for other critical/high issues)
+
           ### 🎬 Final Verdict
           **Recommendation**: [Approve ✅ | Request Changes ❌ | Comment 💬]
           
@@ -170,15 +196,38 @@ jobs:
           # Run Bob
           bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
       
-      - name: Extract Summary Section
+      - name: Extract Summary Section (without Inline Comments)
         run: |
-          # Extract only the summary section (before inline comments section)
-          sed '/## Inline Review Comments/,$d' bob_review_output.md > bob_summary.md
+          python3 << 'PYTHON_SCRIPT'
+          with open('bob_review_output.md', 'r') as f:
+              content = f.read()
           
-          # If no inline comments section found, use the whole output
-          if [ ! -s bob_summary.md ]; then
-            cp bob_review_output.md bob_summary.md
-          fi
+          lines = content.split('\n')
+          filtered_lines = []
+          skip_section = False
+          
+          for line in lines:
+              # Start skipping when we hit the Inline Comments section
+              if '💬 Inline Comments' in line or 'Inline Comments (INTERNAL USE ONLY)' in line:
+                  skip_section = True
+                  continue
+              
+              # Skip all INLINE| formatted lines
+              if line.startswith('INLINE|'):
+                  continue
+              
+              # Add line if we're not in skip mode
+              if not skip_section:
+                  filtered_lines.append(line)
+          
+          # Write filtered content (only the summary section)
+          with open('bob_summary.md', 'w') as f:
+              f.write('\n'.join(filtered_lines))
+          
+          print(f"Original lines: {len(lines)}")
+          print(f"Filtered lines: {len(filtered_lines)}")
+          print(f"Lines removed: {len(lines) - len(filtered_lines)}")
+          PYTHON_SCRIPT
       
       - name: Post Summary to PR
         env:
