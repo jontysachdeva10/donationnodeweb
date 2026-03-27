@@ -70,70 +70,105 @@ jobs:
       - name: Run BobShell Review
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
-
-          PROMPT="Run PR Review Playbook using rules from bob/pr_review_playbook.yaml.
+          
+          # Create prompt using Python to avoid shell issues
+          python3 << 'EOF'
+          prompt = """You are running PR Review Playbook.
 
           PR Title: ${{ steps.meta.outputs.PR_TITLE }}
-
           PR Description: ${{ steps.meta.outputs.PR_BODY }}
 
           Changed Files:
-          $(sed 's/^/- /' changed_files.txt)
+          CHANGED_FILES_PLACEHOLDER
 
           Diff:
-          $(cat pr.diff)
+          DIFF_CONTENT_PLACEHOLDER
 
-          Execute ALL review passes (Intent, Security, Correctness, API compatibility, Test adequacy, Performance, Documentation).
+          IMPORTANT: Do NOT include any preliminary analysis, thinking process, or "Let me analyze" statements.
+          Start DIRECTLY with the structured review output below. No introductory text.
 
-          OUTPUT FORMAT - Start immediately with the structured review (NO preamble, NO 'PR Review Analysis' header):
+          Use rules from bob/pr_review_playbook.yaml.
+          Run ALL passes: Intent, Security, Correctness, API compatibility, Test adequacy, Performance, Documentation
 
-          📋 SECTION 1 - Summary (for PR comment):
-          - Intent Summary
-          - Issue Grouping (Critical, High, Medium, Low)
-          - Security Findings
-          - Breaking Changes
-          - Required Tests
-          - Final Verdict
-          - Fix Suggestions
+          Produce a structured review with TWO sections:
 
-          💬 SECTION 2 - Inline Comments:
-          After your summary, add a section titled '## 💬 Inline Review Comments'
-          For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
-          INLINE|filepath|line_number|severity|your detailed comment here
+          ## 📋 Pull Request Summary
+
+          Use this EXACT structure with proper markdown formatting:
+
+          ### 🎯 Intent & Overview
+          Brief description of what this PR accomplishes and its purpose.
+
+          ### 📊 Issues Found
+          
+          #### 🔴 Critical Issues (Count: X)
+          - **File:Line** - Brief description
+          - **File:Line** - Brief description
+
+          #### 🟠 High Priority Issues (Count: X)
+          - **File:Line** - Brief description
+          - **File:Line** - Brief description
+
+          #### 🟡 Medium Priority Issues (Count: X)
+          - **File:Line** - Brief description
+          - **File:Line** - Brief description
+
+          #### 🔵 Low Priority Issues (Count: X)
+          - **File:Line** - Brief description
+          - **File:Line** - Brief description
+
+          ### 🔒 Security Analysis
+          Summary of security findings (if any). If none, state "No security issues detected."
+
+          ### ⚠️ Breaking Changes
+          List any breaking changes or state "No breaking changes detected."
+
+          ### ✅ Test Coverage
+          Assessment of test coverage and recommendations.
+
+          ### 🎬 Final Verdict
+          **Recommendation**: [Approve ✅ | Request Changes ❌ | Comment 💬]
+          
+          Brief justification for the recommendation.
+
+          ---
+
+          ## 💬 Inline Comments (INTERNAL USE ONLY)
+
+          IMPORTANT: This section will NOT appear in the PR comment. It's only used to generate inline code review comments.
+          
+          For EACH specific issue found in the code, provide a comment in this EXACT format (one per line):
+          INLINE|filepath|line_number|severity|detailed comment explaining the issue
 
           Example:
-          INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability
+          INLINE|src/app.js|42|Critical|SQL injection vulnerability: User input is directly concatenated into query
           INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
 
-          Make sure to include the actual file paths from the changed files list and specific line numbers where issues occur.
+          Rules:
+          - Use actual file paths from the changed files list
+          - Use exact line numbers where issues occur
+          - Severity must be one of: Critical, High, Medium, Low
+          - Provide detailed, actionable comments
+          - Do NOT include these INLINE| lines in Section 1 (Summary)
+          """
 
-          🔧 SECTION 3 - Copy-Paste Fix Prompt:
-          At the end, create a section titled '## 🔧 Ready-to-Use Fix Prompt'
-          Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
-          
-          Format it as a code block with clear instructions:
-          \`\`\`
-          Please fix the following issues found in the PR review:
+          # Read files
+          with open('changed_files.txt', 'r') as f:
+              changed_files = ''.join('- ' + line for line in f)
+          with open('pr.diff', 'r') as f:
+              diff = f.read()
 
-          [List each issue with:
-          - File path and line number
-          - Issue description
-          - Suggested fix approach
-          - Any relevant context]
+          # Replace placeholders
+          prompt = prompt.replace('CHANGED_FILES_PLACEHOLDER', changed_files)
+          prompt = prompt.replace('DIFF_CONTENT_PLACEHOLDER', diff)
 
-          Changed files to review:
-          [List the changed files]
+          # Write prompt
+          with open('prompt.txt', 'w') as f:
+              f.write(prompt)
+          EOF
 
-          Please apply these fixes while maintaining:
-          - Code style consistency
-          - Existing functionality
-          - Test coverage
-          - Documentation updates if needed
-          \`\`\`
-          
-          Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications."
-
-          bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
+          # Run Bob
+          bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
       
       - name: Extract Summary Section
         run: |
