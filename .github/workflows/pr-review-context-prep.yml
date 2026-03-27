@@ -13,39 +13,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install GitHub CLI
-        run: >
-          sudo apt update
-
-          sudo apt install -y curl
-
-          sudo mkdir -p -m 755 /etc/apt/keyrings
-
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
-
-          sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-
-          sudo apt update
-
-          sudo apt install -y gh
-      - name: Authenticate GH CLI
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "${GH_TOKEN}" | gh auth login --with-token
+          type -p curl >/dev/null || sudo apt install curl -y
+          sudo mkdir -p -m 755 /etc/apt/keyrings
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+            sudo dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+            sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
       - name: Extract PR metadata
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q
-          .title)
-
+        run: |
+          TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q .title)
           BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q .body)
-
           echo "PR_TITLE=$TITLE" >> $GITHUB_OUTPUT
-
           echo "PR_BODY=$BODY" >> $GITHUB_OUTPUT
       - name: Extract PR diff
         env:
@@ -55,15 +40,11 @@ jobs:
       - name: Extract changed files
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh pr view ${{ github.event.pull_request.number }} --json files -q
-          '.files[].path' > changed_files.txt
+        run: |
+          gh pr view ${{ github.event.pull_request.number }} --json files -q '.files[].path' > changed_files.txt
       - name: Install BobShell
-        run: >
-          curl -s
-          https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh
-          | bash
-
+        run: |
+          curl -s https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh | bash
           echo "BobShell installed."
       - name: Export BobShell API Key
         run: |
@@ -112,6 +93,5 @@ jobs:
       - name: Post BobShell Output to PR
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh pr comment ${{ github.event.pull_request.number }} --body-file
-          bob_review_output.md
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body-file bob_review_output.md
