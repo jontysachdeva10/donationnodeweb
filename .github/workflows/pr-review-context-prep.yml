@@ -71,156 +71,161 @@ jobs:
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
 
-          # Read changed files and diff
-          CHANGED_FILES=$(sed 's/^/- /' changed_files.txt)
-          DIFF_CONTENT=$(cat pr.diff)
+          # Create prompt file to avoid shell interpretation issues
+          cat > prompt.txt << 'PROMPT_EOF'
+You are running PR Review Playbook.
 
-          PROMPT="You are running PR Review Playbook.
+PR Title:
+${{ steps.meta.outputs.PR_TITLE }}
 
-          PR Title:
-          ${{ steps.meta.outputs.PR_TITLE }}
+PR Description:
+${{ steps.meta.outputs.PR_BODY }}
 
-          PR Description:
-          ${{ steps.meta.outputs.PR_BODY }}
+Changed Files:
+CHANGED_FILES_PLACEHOLDER
 
-          Changed Files:
-          ${CHANGED_FILES}
+Diff:
+DIFF_CONTENT_PLACEHOLDER
 
-          Diff:
-          ${DIFF_CONTENT}
+Use rules from bob/pr_review_playbook.yaml.
+Run ALL passes:
+- Intent
+- Security
+- Correctness
+- API compatibility
+- Test adequacy
+- Performance
+- Documentation
 
-          Use rules from bob/pr_review_playbook.yaml.
-          Run ALL passes:
-          - Intent
-          - Security
-          - Correctness
-          - API compatibility
-          - Test adequacy
-          - Performance
-          - Documentation
+Produce a structured review with THREE sections:
 
-          Produce a structured review with THREE sections:
+SECTION 1 - Summary (for PR comment):
+Start with a statistics section showing:
+## Review Statistics
+- Total Issues Found: [number]
+- Critical: [number]
+- High: [number]
+- Medium: [number]
+- Low: [number]
+- Files Reviewed: [number]
+- Lines Changed: [approximate number from diff]
 
-          SECTION 1 - Summary (for PR comment):
-          Start with a statistics section showing:
-          ## 📊 Review Statistics
-          - Total Issues Found: [number]
-          - Critical: [number]
-          - High: [number]
-          - Medium: [number]
-          - Low: [number]
-          - Files Reviewed: [number]
-          - Lines Changed: [approximate number from diff]
+Then include:
+## Intent Summary
+[Brief description of what the PR aims to accomplish]
 
-          Then include:
-          ## 🎯 Intent Summary
-          [Brief description of what the PR aims to accomplish]
+## Issues Found
+Group issues by severity with specific examples:
 
-          ## 🐛 Issues Found
-          Group issues by severity with specific examples:
-          
-          ### Critical Issues
-          [List critical issues if any]
-          
-          ### High Priority Issues
-          [List high priority issues if any]
-          
-          ### Medium Priority Issues
-          [List medium priority issues if any]
-          
-          ### Low Priority Issues
-          [List low priority issues if any]
+### Critical Issues
+[List critical issues if any]
 
-          ## 🔒 Security Findings
-          [List any security concerns, or state "No security issues found"]
+### High Priority Issues
+[List high priority issues if any]
 
-          ## ⚠️ Breaking Changes
-          [List any breaking changes, or state "No breaking changes detected"]
+### Medium Priority Issues
+[List medium priority issues if any]
 
-          ## 🧪 Test Coverage
-          [Assess test coverage and list any missing tests]
+### Low Priority Issues
+[List low priority issues if any]
 
-          ## 🔧 Fix Suggestions
-          Provide a detailed section with actionable fix suggestions:
-          
-          For each major issue, include:
-          1. **What needs to be fixed**: Clear description
-          2. **Why it matters**: Impact and reasoning
-          3. **How to fix it**: Step-by-step guidance
-          4. **Priority**: Critical/High/Medium/Low
-          
-          Example format:
-          ### Fix 1: [Issue Title]
-          - **File**: src/example.js:42
-          - **Severity**: High
-          - **Issue**: Description of the problem
-          - **Recommendation**: Specific steps to fix
-          - **Impact**: What happens if not fixed
+## Security Findings
+[List any security concerns, or state "No security issues found"]
 
-          ## ✅ Final Verdict
-          [Approve / Request Changes / Comment] with clear reasoning
+## Breaking Changes
+[List any breaking changes, or state "No breaking changes detected"]
 
-          SECTION 2 - Inline Comments with Suggested Fixes:
-          After your summary, add a section titled '## Inline Review Comments'
-          For EACH specific issue you find in the code, provide a comment in this EXACT format:
-          INLINE|filepath|line_number|severity|Issue description
+## Test Coverage
+[Assess test coverage and list any missing tests]
 
-          SUGGESTED_FIX|filepath|line_number
-          \`\`\`language
-          // Suggested code fix here
-          \`\`\`
+## Fix Suggestions
+Provide a detailed section with actionable fix suggestions:
 
-          Example:
-          INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability. Use parameterized queries instead.
+For each major issue, include:
+1. **What needs to be fixed**: Clear description
+2. **Why it matters**: Impact and reasoning
+3. **How to fix it**: Step-by-step guidance
+4. **Priority**: Critical/High/Medium/Low
 
-          SUGGESTED_FIX|src/app.js|42
-          \`\`\`javascript
-          const query = 'SELECT * FROM users WHERE id = ?';
-          db.query(query, [userId], (err, results) => {
-            // handle results
-          });
-          \`\`\`
+Example format:
+### Fix 1: [Issue Title]
+- **File**: src/example.js:42
+- **Severity**: High
+- **Issue**: Description of the problem
+- **Recommendation**: Specific steps to fix
+- **Impact**: What happens if not fixed
 
-          INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
+## Final Verdict
+[Approve / Request Changes / Comment] with clear reasoning
 
-          SUGGESTED_FIX|src/utils.js|15
-          \`\`\`javascript
-          const maxRetries = 3;
-          \`\`\`
+SECTION 2 - Inline Comments with Suggested Fixes:
+After your summary, add a section titled '## Inline Review Comments'
+For EACH specific issue you find in the code, provide a comment in this EXACT format:
+INLINE|filepath|line_number|severity|Issue description
 
-          Make sure to:
-          - Include the actual file paths from the changed files list
-          - Provide specific line numbers where issues occur
-          - Include a code block with the suggested fix using proper syntax highlighting
-          - Show enough context in the fix so it's clear what needs to be changed
+SUGGESTED_FIX|filepath|line_number
+```language
+// Suggested code fix here
+```
 
-          SECTION 3 - Copy-Paste Fix Prompt:
-          At the end, create a section titled '## 🔧 Ready-to-Use Fix Prompt'
-          Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
-          
-          Format it as a code block with clear instructions:
-          \`\`\`
-          Please fix the following issues found in the PR review:
+Example:
+INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability. Use parameterized queries instead.
 
-          [List each issue with:
-          - File path and line number
-          - Issue description
-          - Suggested fix approach
-          - Any relevant context]
+SUGGESTED_FIX|src/app.js|42
+```javascript
+const query = 'SELECT * FROM users WHERE id = ?';
+db.query(query, [userId], (err, results) => {
+  // handle results
+});
+```
 
-          Changed files to review:
-          [List the changed files]
+INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
 
-          Please apply these fixes while maintaining:
-          - Code style consistency
-          - Existing functionality
-          - Test coverage
-          - Documentation updates if needed
-          \`\`\`
-          
-          Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications."
+SUGGESTED_FIX|src/utils.js|15
+```javascript
+const maxRetries = 3;
+```
 
-          bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
+Make sure to:
+- Include the actual file paths from the changed files list
+- Provide specific line numbers where issues occur
+- Include a code block with the suggested fix using proper syntax highlighting
+- Show enough context in the fix so it's clear what needs to be changed
+
+SECTION 3 - Copy-Paste Fix Prompt:
+At the end, create a section titled '## Ready-to-Use Fix Prompt'
+Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
+
+Format it as a code block with clear instructions:
+```
+Please fix the following issues found in the PR review:
+
+[List each issue with:
+- File path and line number
+- Issue description
+- Suggested fix approach
+- Any relevant context]
+
+Changed files to review:
+[List the changed files]
+
+Please apply these fixes while maintaining:
+- Code style consistency
+- Existing functionality
+- Test coverage
+- Documentation updates if needed
+```
+
+Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications.
+PROMPT_EOF
+
+          # Replace placeholders with actual content
+          sed 's/^/- /' changed_files.txt > changed_files_formatted.txt
+          sed -i "s|CHANGED_FILES_PLACEHOLDER|$(cat changed_files_formatted.txt)|g" prompt.txt
+          sed -i "s|DIFF_CONTENT_PLACEHOLDER|$(cat pr.diff)|g" prompt.txt
+
+          # Run bob with the prompt file
+          bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
       
       - name: Extract Summary Section
         run: |
