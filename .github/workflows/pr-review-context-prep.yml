@@ -172,6 +172,34 @@ jobs:
           with open('changed_files_only.txt', 'r') as f:
               changed_files = set(line.strip() for line in f if line.strip())
           
+          # Parse the diff to get valid line numbers for each file
+          with open('pr.diff', 'r') as f:
+              diff_content = f.read()
+          
+          # Extract valid line numbers from diff
+          valid_lines = {}
+          current_file = None
+          for line in diff_content.split('\n'):
+              # Match file header: +++ b/path/to/file
+              file_match = re.match(r'^\+\+\+ b/(.+)$', line)
+              if file_match:
+                  current_file = file_match.group(1)
+                  valid_lines[current_file] = set()
+                  continue
+              
+              # Match hunk header: @@ -old_start,old_count +new_start,new_count @@
+              hunk_match = re.match(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', line)
+              if hunk_match and current_file:
+                  start_line = int(hunk_match.group(1))
+                  count = int(hunk_match.group(2)) if hunk_match.group(2) else 1
+                  # Add all lines in this hunk
+                  for i in range(start_line, start_line + count):
+                      valid_lines[current_file].add(i)
+          
+          print(f"Valid diff lines per file:")
+          for file, lines in valid_lines.items():
+              print(f"  {file}: {len(lines)} lines")
+          
           with open('bob_review_output.md', 'r') as f:
               content = f.read()
           
@@ -219,7 +247,26 @@ jobs:
           if current_comment:
               comments.append(current_comment)
           
-          valid_comments = [c for c in comments if c['filepath'] in changed_files]
+          # Filter comments to only include files in PR and lines in diff
+          valid_comments = []
+          skipped_comments = []
+          
+          for c in comments:
+              if c['filepath'] not in changed_files:
+                  skipped_comments.append((c, "File not in PR"))
+              elif c['filepath'] not in valid_lines:
+                  skipped_comments.append((c, "No diff data for file"))
+              elif int(c['line']) not in valid_lines[c['filepath']]:
+                  skipped_comments.append((c, f"Line {c['line']} not in diff"))
+              else:
+                  valid_comments.append(c)
+          
+          if skipped_comments:
+              print(f"\n⚠️ Skipping {len(skipped_comments)} comments not in PR diff:")
+              for c, reason in skipped_comments[:5]:  # Show first 5
+                  print(f"  - {c['filepath']}:{c['line']} - {reason}")
+              if len(skipped_comments) > 5:
+                  print(f"  ... and {len(skipped_comments) - 5} more")
           success_count = 0
           fail_count = 0
           
@@ -308,3 +355,5 @@ jobs:
           
           echo "Applying labels: $LABELS"
           gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABELS"
+
+# Made with Bob
