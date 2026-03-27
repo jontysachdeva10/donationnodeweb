@@ -95,7 +95,7 @@ jobs:
           - Performance
           - Documentation
 
-          Produce a structured review with TWO sections:
+          Produce a structured review with THREE sections:
 
           SECTION 1 - Summary (for PR comment):
           - Intent Summary
@@ -106,23 +106,54 @@ jobs:
           - Final Verdict
           - Fix Suggestions
 
-          SECTION 2 - Inline Comments (for line-by-line review):
-          For each issue found, provide in this EXACT format:
-          ---INLINE-COMMENT---
-          FILE: <file_path>
-          LINE: <line_number>
-          SEVERITY: <Critical|High|Medium|Low>
-          COMMENT: <detailed comment about the issue>
-          ---END-INLINE-COMMENT---
+          SECTION 2 - Inline Comments:
+          After your summary, add a section titled '## Inline Review Comments'
+          For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
+          INLINE|filepath|line_number|severity|your detailed comment here
 
-          At the end: Ask 'Would you like fixes generated?'"
+          Example:
+          INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability
+          INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
+
+          Make sure to include the actual file paths from the changed files list and specific line numbers where issues occur.
+
+          SECTION 3 - Copy-Paste Fix Prompt:
+          At the end, create a section titled '## 🔧 Ready-to-Use Fix Prompt'
+          Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
+          
+          Format it as a code block with clear instructions:
+          \`\`\`
+          Please fix the following issues found in the PR review:
+
+          [List each issue with:
+          - File path and line number
+          - Issue description
+          - Suggested fix approach
+          - Any relevant context]
+
+          Changed files to review:
+          [List the changed files]
+
+          Please apply these fixes while maintaining:
+          - Code style consistency
+          - Existing functionality
+          - Test coverage
+          - Documentation updates if needed
+          \`\`\`
+          
+          Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications."
 
           bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
       
       - name: Extract Summary Section
         run: |
-          # Extract only the summary section (before inline comments)
-          sed '/---INLINE-COMMENT---/,$d' bob_review_output.md > bob_summary.md
+          # Extract only the summary section (before inline comments section)
+          sed '/## Inline Review Comments/,$d' bob_review_output.md > bob_summary.md
+          
+          # If no inline comments section found, use the whole output
+          if [ ! -s bob_summary.md ]; then
+            cp bob_review_output.md bob_summary.md
+          fi
       
       - name: Post Summary to PR
         env:
@@ -130,44 +161,40 @@ jobs:
         run: |
           gh pr comment ${{ github.event.pull_request.number }} --body-file bob_summary.md
       
+      - name: Debug - Show Bob Output
+        run: |
+          echo "=== Full Bob Output ==="
+          cat bob_review_output.md
+          echo "=== End Bob Output ==="
+      
       - name: Post Inline Review Comments
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Extract inline comments section
-          sed -n '/---INLINE-COMMENT---/,/---END-INLINE-COMMENT---/p' bob_review_output.md > inline_comments.txt
+          # Get the commit SHA
+          COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
           
-          # Parse and post each inline comment
-          while IFS= read -r line; do
-            if [[ "$line" == "---INLINE-COMMENT---" ]]; then
-              FILE=""
-              LINE=""
-              COMMENT=""
-            elif [[ "$line" =~ ^FILE:\ (.+)$ ]]; then
-              FILE="${BASH_REMATCH[1]}"
-            elif [[ "$line" =~ ^LINE:\ ([0-9]+)$ ]]; then
-              LINE="${BASH_REMATCH[1]}"
-            elif [[ "$line" =~ ^SEVERITY:\ (.+)$ ]]; then
-              SEVERITY="${BASH_REMATCH[1]}"
-            elif [[ "$line" =~ ^COMMENT:\ (.+)$ ]]; then
-              COMMENT="${BASH_REMATCH[1]}"
-            elif [[ "$line" == "---END-INLINE-COMMENT---" ]] && [[ -n "$FILE" ]] && [[ -n "$LINE" ]]; then
-              # Get the commit SHA
-              COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
+          # Extract and parse inline comments
+          grep "^INLINE|" bob_review_output.md | while IFS='|' read -r prefix filepath line_num severity comment; do
+            if [[ -n "$filepath" ]] && [[ -n "$line_num" ]] && [[ "$line_num" =~ ^[0-9]+$ ]]; then
+              echo "Posting comment to $filepath:$line_num - [$severity] $comment"
               
-              # Post review comment
-              BODY="**[$SEVERITY]** $COMMENT"
+              # Post review comment using GitHub API
               gh api \
                 --method POST \
                 -H "Accept: application/vnd.github+json" \
                 /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-                -f body="$BODY" \
+                -f body="**[$severity]** $comment" \
                 -f commit_id="$COMMIT_SHA" \
-                -f path="$FILE" \
-                -F line=$LINE \
-                || echo "Failed to post comment for $FILE:$LINE"
+                -f path="$filepath" \
+                -F line="$line_num" \
+                || echo "⚠️ Failed to post comment for $filepath:$line_num"
             fi
-          done < inline_comments.txt
+          done
+          
+          # Count how many inline comments were found
+          INLINE_COUNT=$(grep -c "^INLINE|" bob_review_output.md || echo "0")
+          echo "Found $INLINE_COUNT inline comments to post"
       
       - name: Analyze Review and Apply Labels
         env:
