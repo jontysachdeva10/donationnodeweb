@@ -95,7 +95,9 @@ jobs:
           - Performance
           - Documentation
 
-          Produce a structured review:
+          Produce a structured review with TWO sections:
+
+          SECTION 1 - Summary (for PR comment):
           - Intent Summary
           - Issue Grouping (Critical, High, Medium, Low)
           - Security Findings
@@ -104,12 +106,106 @@ jobs:
           - Final Verdict
           - Fix Suggestions
 
+          SECTION 2 - Inline Comments (for line-by-line review):
+          For each issue found, provide in this EXACT format:
+          ---INLINE-COMMENT---
+          FILE: <file_path>
+          LINE: <line_number>
+          SEVERITY: <Critical|High|Medium|Low>
+          COMMENT: <detailed comment about the issue>
+          ---END-INLINE-COMMENT---
+
           At the end: Ask 'Would you like fixes generated?'"
 
           bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
       
-      - name: Post BobShell Output to PR
+      - name: Extract Summary Section
+        run: |
+          # Extract only the summary section (before inline comments)
+          sed '/---INLINE-COMMENT---/,$d' bob_review_output.md > bob_summary.md
+      
+      - name: Post Summary to PR
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr comment ${{ github.event.pull_request.number }} --body-file bob_review_output.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file bob_summary.md
+      
+      - name: Post Inline Review Comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Extract inline comments section
+          sed -n '/---INLINE-COMMENT---/,/---END-INLINE-COMMENT---/p' bob_review_output.md > inline_comments.txt
+          
+          # Parse and post each inline comment
+          while IFS= read -r line; do
+            if [[ "$line" == "---INLINE-COMMENT---" ]]; then
+              FILE=""
+              LINE=""
+              COMMENT=""
+            elif [[ "$line" =~ ^FILE:\ (.+)$ ]]; then
+              FILE="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^LINE:\ ([0-9]+)$ ]]; then
+              LINE="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^SEVERITY:\ (.+)$ ]]; then
+              SEVERITY="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^COMMENT:\ (.+)$ ]]; then
+              COMMENT="${BASH_REMATCH[1]}"
+            elif [[ "$line" == "---END-INLINE-COMMENT---" ]] && [[ -n "$FILE" ]] && [[ -n "$LINE" ]]; then
+              # Get the commit SHA
+              COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
+              
+              # Post review comment
+              BODY="**[$SEVERITY]** $COMMENT"
+              gh api \
+                --method POST \
+                -H "Accept: application/vnd.github+json" \
+                /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+                -f body="$BODY" \
+                -f commit_id="$COMMIT_SHA" \
+                -f path="$FILE" \
+                -F line=$LINE \
+                || echo "Failed to post comment for $FILE:$LINE"
+            fi
+          done < inline_comments.txt
+      
+      - name: Analyze Review and Apply Labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Initialize labels array
+          LABELS="bob-validated"
+          
+          # Check for critical issues
+          if grep -qi "critical" bob_review_output.md; then
+            LABELS="$LABELS,severity-critical"
+          fi
+          
+          # Check for high severity issues
+          if grep -qi "high" bob_review_output.md && ! echo "$LABELS" | grep -q "severity-critical"; then
+            LABELS="$LABELS,severity-high"
+          fi
+          
+          # Check for medium severity issues
+          if grep -qi "medium" bob_review_output.md && ! echo "$LABELS" | grep -q "severity-"; then
+            LABELS="$LABELS,severity-medium"
+          fi
+          
+          # Check if fixes are suggested
+          if grep -qi "fix" bob_review_output.md || grep -qi "suggestion" bob_review_output.md; then
+            LABELS="$LABELS,fix-needed"
+          fi
+          
+          # Check for security issues
+          if grep -qi "security" bob_review_output.md; then
+            LABELS="$LABELS,security-review"
+          fi
+          
+          # Check for performance issues
+          if grep -qi "performance" bob_review_output.md; then
+            LABELS="$LABELS,performance-review"
+          fi
+          
+          # Apply labels to PR
+          echo "Applying labels: $LABELS"
+          gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABELS"
