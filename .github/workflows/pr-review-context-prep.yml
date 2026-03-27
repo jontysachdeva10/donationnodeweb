@@ -219,13 +219,31 @@ Please apply these fixes while maintaining:
 Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications.
 PROMPT_EOF
 
-          # Replace placeholders with actual content
-          sed 's/^/- /' changed_files.txt > changed_files_formatted.txt
-          sed -i "s|CHANGED_FILES_PLACEHOLDER|$(cat changed_files_formatted.txt)|g" prompt.txt
-          sed -i "s|DIFF_CONTENT_PLACEHOLDER|$(cat pr.diff)|g" prompt.txt
+          # Replace placeholders with actual content using Python
+          python3 << 'PYTHON_REPLACE'
+import sys
+
+# Read the files
+with open('changed_files.txt', 'r') as f:
+    changed_files = ''.join('- ' + line for line in f)
+
+with open('pr.diff', 'r') as f:
+    diff_content = f.read()
+
+with open('prompt.txt', 'r') as f:
+    prompt = f.read()
+
+# Replace placeholders
+prompt = prompt.replace('CHANGED_FILES_PLACEHOLDER', changed_files)
+prompt = prompt.replace('DIFF_CONTENT_PLACEHOLDER', diff_content)
+
+# Write the final prompt
+with open('prompt_final.txt', 'w') as f:
+    f.write(prompt)
+PYTHON_REPLACE
 
           # Run bob with the prompt file
-          bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
+          bob --chat-mode=advanced -p "$(cat prompt_final.txt)" > bob_review_output.md
       
       - name: Extract Summary Section
         run: |
