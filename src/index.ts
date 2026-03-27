@@ -1,17 +1,19 @@
 import express from "express";
-import { connectDB } from "./config/db";
+import { connectDB } from "./database/config/db";
 
 const app = express();
 
-import registerUser from "./routes/register";
-import ngoRoutes from "./routes/ngo";
+import userRoutes from "./api/user";
+import ngoRoutes from "./api/ngo";
+import activityRoutes from "./api/activity";
 
 // Init Middleware
 app.use(express.json());
 
 // Routes Middleware
-app.use("/register", registerUser);
+app.use("/user", userRoutes);
 app.use("/ngo", ngoRoutes);
+app.use("/", activityRoutes);
 
 // connect DB
 connectDB();
