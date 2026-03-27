@@ -112,27 +112,27 @@ jobs:
           INLINE|filepath|line_number|severity|Issue description
 
           SUGGESTED_FIX|filepath|line_number
-          ```language
+          \`\`\`language
           // Suggested code fix here
-          ```
+          \`\`\`
 
           Example:
           INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability. Use parameterized queries instead.
 
           SUGGESTED_FIX|src/app.js|42
-          ```javascript
+          \`\`\`javascript
           const query = 'SELECT * FROM users WHERE id = ?';
           db.query(query, [userId], (err, results) => {
             // handle results
           });
-          ```
+          \`\`\`
 
           INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
 
           SUGGESTED_FIX|src/utils.js|15
-          ```javascript
+          \`\`\`javascript
           const maxRetries = 3;
-          ```
+          \`\`\`
 
           Make sure to:
           - Include the actual file paths from the changed files list
