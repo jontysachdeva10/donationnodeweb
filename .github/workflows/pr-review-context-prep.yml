@@ -1,17 +1,21 @@
-name: PR Review Playbook Context Preparer
+name: PR Review Playbook (BobShell Automated)
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  prepare-context:
+  bob-review:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      ###############################################################
+      # Install GitHub CLI
+      ###############################################################
       - name: Install GitHub CLI
         run: |
           type -p curl >/dev/null || sudo apt install curl -y
@@ -19,18 +23,31 @@ jobs:
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
             sudo dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
           sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+          echo "deb [arch=$(dpkg --print-architecture) \
+            signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] \
+            https://cli.github.com/packages stable main" | \
             sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt update
           sudo apt install gh -y
 
+      # Authenticate GH CLI
+      - name: Authenticate GH CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh auth login --with-token <<< "${GH_TOKEN}"
+
+      ###############################################################
+      # Extract PR metadata
+      ###############################################################
       - name: Extract PR metadata
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "PR_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q .title)" >> $GITHUB_OUTPUT
-          echo "PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q .body)" >> $GITHUB_OUTPUT
+          TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q .title)
+          BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q .body)
+          echo "PR_TITLE=$TITLE" >> $GITHUB_OUTPUT
+          echo "PR_BODY=$BODY" >> $GITHUB_OUTPUT
 
       - name: Extract PR diff
         env:
@@ -42,32 +59,70 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh pr view ${{ github.event.pull_request.number }} --json files -q '.files[].path' > changed_files.txt
 
-      - name: Prepare Context Bundle
+      ###############################################################
+      # Install BobShell
+      ###############################################################
+      - name: Install BobShell
         run: |
-          {
-            echo "### 🤖 Bob PR Review Playbook — Context Bundle"
-            echo ""
-            echo "**PR Title:**"
-            echo "${{ steps.meta.outputs.PR_TITLE }}"
-            echo ""
-            echo "**PR Description:**"
-            echo "${{ steps.meta.outputs.PR_BODY }}"
-            echo ""
-            echo "**Changed Files:**"
-            sed 's/^/- /' changed_files.txt
-            echo ""
-            echo "**Diff:**"
-            echo "\`\`\`diff"
-            cat pr.diff
-            echo "\`\`\`"
-            echo ""
-            echo "### 📘 How to Run in Bob"
-            echo "Copy/paste this entire content into Bob along with:"
-            echo "> Review this PR using the Playbook at bob/pr_review_playbook.yaml"
-            echo "> Apply all passes."
-          } > context.md
+          curl -s https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh | bash
+          echo "BobShell installed."
 
-      - name: Post Context Bundle to PR
+      ###############################################################
+      # Set BOBSHELL_API_KEY
+      ###############################################################
+      - name: Export BobShell API Key
+        run: |
+          export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
+          echo "BOBSHELL_API_KEY exported."
+
+      ###############################################################
+      # Run BobShell Review
+      ###############################################################
+      - name: Run BobShell Review
+        run: |
+          export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
+          
+          PROMPT="You are running PR Review Playbook.
+
+PR Title:
+${{ steps.meta.outputs.PR_TITLE }}
+
+PR Description:
+${{ steps.meta.outputs.PR_BODY }}
+
+Changed Files:
+$(sed 's/^/- /' changed_files.txt)
+
+Diff:
+$(cat pr.diff)
+
+Use rules from bob/pr_review_playbook.yaml.
+Run ALL passes:
+- Intent
+- Security
+- Correctness
+- API compatibility
+- Test adequacy
+- Performance
+- Documentation
+
+Produce a structured review:
+- Intent Summary
+- Issue Grouping (Critical, High, Medium, Low)
+- Security Findings
+- Breaking Changes
+- Required Tests
+- Final Verdict
+- Fix Suggestions
+
+At the end: Ask 'Would you like fixes generated?'"
+
+          bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
+
+      ###############################################################
+      # Post Bob output as PR comment
+      ###############################################################
+      - name: Post BobShell Output to PR
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment ${{ github.event.pull_request.number }} --body-file context.md
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file bob_review_output.md
