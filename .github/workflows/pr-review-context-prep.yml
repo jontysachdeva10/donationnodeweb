@@ -197,109 +197,101 @@ jobs:
           # Get the commit SHA
           COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
           
-          # Create a temporary file to store processed comments
-          > inline_comments_processed.txt
+          # Use Python to parse the output more reliably
+          python3 << 'PYTHON_SCRIPT'
+          import re
+          import subprocess
+          import sys
+          import os
           
-          # Read the entire output and process it
-          in_code_block=false
-          current_fix=""
-          current_filepath=""
-          current_line=""
+          commit_sha = os.environ.get('COMMIT_SHA')
+          pr_number = "${{ github.event.pull_request.number }}"
+          repo = "${{ github.repository }}"
           
-          while IFS= read -r line; do
-            # Check if this is an INLINE comment
-            if [[ "$line" =~ ^INLINE\|(.+)\|([0-9]+)\|(.+)\|(.+)$ ]]; then
-              filepath="${BASH_REMATCH[1]}"
-              line_num="${BASH_REMATCH[2]}"
-              severity="${BASH_REMATCH[3]}"
-              comment="${BASH_REMATCH[4]}"
-              
-              echo "INLINE|$filepath|$line_num|$severity|$comment" >> inline_comments_processed.txt
-              current_filepath="$filepath"
-              current_line="$line_num"
-              
-            # Check if this is a SUGGESTED_FIX marker
-            elif [[ "$line" =~ ^SUGGESTED_FIX\|(.+)\|([0-9]+)$ ]]; then
-              current_fix=""
-              in_code_block=false
-              
-            # Check if we're entering a code block
-            elif [[ "$line" =~ ^\`\`\` ]] && [[ -z "$current_fix" ]]; then
-              in_code_block=true
-              current_fix="$line"$'\n'
-              
-            # Check if we're exiting a code block
-            elif [[ "$line" =~ ^\`\`\`$ ]] && [[ -n "$current_fix" ]]; then
-              current_fix+="$line"
-              echo "FIX|$current_filepath|$current_line|$current_fix" >> inline_comments_processed.txt
-              in_code_block=false
-              current_fix=""
-              
-            # Collect code block content
-            elif [[ "$in_code_block" == true ]]; then
-              current_fix+="$line"$'\n'
-            fi
-          done < bob_review_output.md
+          # Read the Bob output
+          with open('bob_review_output.md', 'r') as f:
+              content = f.read()
           
-          # Now post the comments with their fixes
-          current_comment=""
-          current_fix=""
+          # Parse INLINE comments and SUGGESTED_FIX blocks
+          lines = content.split('\n')
+          comments = []
+          current_comment = None
+          in_code_block = False
+          code_block_lines = []
           
-          while IFS='|' read -r type filepath line_num severity_or_fix rest; do
-            if [[ "$type" == "INLINE" ]]; then
-              # If we have a previous comment with fix, post it
-              if [[ -n "$current_comment" ]]; then
-                BODY="$current_comment"
-                if [[ -n "$current_fix" ]]; then
-                  BODY="$BODY"$'\n\n'"### 💡 Suggested Fix:"$'\n'"$current_fix"
-                fi
-                
-                echo "Posting comment to $prev_filepath:$prev_line"
-                gh api \
-                  --method POST \
-                  -H "Accept: application/vnd.github+json" \
-                  /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-                  -f body="$BODY" \
-                  -f commit_id="$COMMIT_SHA" \
-                  -f path="$prev_filepath" \
-                  -F line="$prev_line" \
-                  || echo "⚠️ Failed to post comment for $prev_filepath:$prev_line"
-              fi
+          for line in lines:
+              # Match INLINE comment
+              inline_match = re.match(r'^INLINE\|([^|]+)\|(\d+)\|([^|]+)\|(.+)$', line)
+              if inline_match:
+                  # Save previous comment if exists
+                  if current_comment:
+                      comments.append(current_comment)
+                  
+                  current_comment = {
+                      'filepath': inline_match.group(1),
+                      'line': inline_match.group(2),
+                      'severity': inline_match.group(3),
+                      'comment': inline_match.group(4),
+                      'fix': None
+                  }
+                  continue
               
-              # Start new comment
-              current_comment="**[$severity_or_fix]** $rest"
-              current_fix=""
-              prev_filepath="$filepath"
-              prev_line="$line_num"
+              # Match SUGGESTED_FIX marker
+              fix_match = re.match(r'^SUGGESTED_FIX\|([^|]+)\|(\d+)$', line)
+              if fix_match:
+                  in_code_block = False
+                  code_block_lines = []
+                  continue
               
-            elif [[ "$type" == "FIX" ]]; then
-              # Store the fix for the current comment
-              current_fix="$severity_or_fix"
-            fi
-          done < inline_comments_processed.txt
+              # Handle code blocks
+              if line.startswith('```'):
+                  if not in_code_block:
+                      in_code_block = True
+                      code_block_lines = [line]
+                  else:
+                      code_block_lines.append(line)
+                      if current_comment:
+                          current_comment['fix'] = '\n'.join(code_block_lines)
+                      in_code_block = False
+                      code_block_lines = []
+                  continue
+              
+              if in_code_block:
+                  code_block_lines.append(line)
           
-          # Post the last comment if exists
-          if [[ -n "$current_comment" ]]; then
-            BODY="$current_comment"
-            if [[ -n "$current_fix" ]]; then
-              BODY="$BODY"$'\n\n'"### 💡 Suggested Fix:"$'\n'"$current_fix"
-            fi
-            
-            echo "Posting comment to $prev_filepath:$prev_line"
-            gh api \
-              --method POST \
-              -H "Accept: application/vnd.github+json" \
-              /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-              -f body="$BODY" \
-              -f commit_id="$COMMIT_SHA" \
-              -f path="$prev_filepath" \
-              -F line="$prev_line" \
-              || echo "⚠️ Failed to post comment for $prev_filepath:$prev_line"
-          fi
+          # Add last comment
+          if current_comment:
+              comments.append(current_comment)
           
-          # Count how many inline comments were found
-          INLINE_COUNT=$(grep -c "^INLINE|" inline_comments_processed.txt || echo "0")
-          echo "Found $INLINE_COUNT inline comments with suggested fixes to post"
+          # Post comments
+          for comment in comments:
+              body = f"**[{comment['severity']}]** {comment['comment']}"
+              
+              if comment['fix']:
+                  body += f"\n\n### 💡 Suggested Fix:\n{comment['fix']}"
+              
+              print(f"Posting comment to {comment['filepath']}:{comment['line']}")
+              
+              # Use gh api to post comment
+              cmd = [
+                  'gh', 'api',
+                  '--method', 'POST',
+                  '-H', 'Accept: application/vnd.github+json',
+                  f'/repos/{repo}/pulls/{pr_number}/comments',
+                  '-f', f'body={body}',
+                  '-f', f'commit_id={commit_sha}',
+                  '-f', f'path={comment["filepath"]}',
+                  '-F', f'line={comment["line"]}'
+              ]
+              
+              try:
+                  subprocess.run(cmd, check=True, capture_output=True)
+              except subprocess.CalledProcessError as e:
+                  print(f"⚠️ Failed to post comment for {comment['filepath']}:{comment['line']}")
+                  print(f"Error: {e.stderr.decode()}")
+          
+          print(f"Found {len(comments)} inline comments with suggested fixes to post")
+          PYTHON_SCRIPT
       
       - name: Create Labels if Not Exist
         env:
