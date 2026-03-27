@@ -1,9 +1,11 @@
-name: PR Review Playbook
-version: 2.0
+name: PR Review Playbook - Enhanced Edition
+version: 3.0
+description: Comprehensive code review playbook for automated PR analysis with detailed checks and best practices
 
 output_format:
   enforce_sections: true
   sections:
+    - "Review Statistics"
     - "Intent Summary"
     - "High-Level Change Analysis"
     - "Critical Issues (Blockers)"
@@ -11,16 +13,17 @@ output_format:
     - "Medium Severity Issues"
     - "Low Severity Issues"
     - "Security Findings"
+    - "Code Quality Assessment"
+    - "Architecture & Design Patterns"
     - "Required Tests"
     - "Breaking Changes Audit"
     - "Performance Observations"
     - "Documentation Requirements"
-    - "Affected Files Summary"
     - "Positive Engineering Practices"
+    - "Suggested Code Fixes"
     - "Confidence Level"
     - "Final Verdict"
-    - "Fix Suggestions"
-    - "Auto-Generated Patch (Optional)"
+    - "Ready-to-Use Fix Prompt"
 
 force_tone:
   concise: true
@@ -28,63 +31,239 @@ force_tone:
   no-fluff: true
   no-generic-advice: true
   always-use-specific-file-paths: true
+  actionable: true
+  constructive: true
 
 rules:
   blockers:
-    - "Security vulnerability"
-    - "Function returns unresolved promises"
-    - "Breaking API change without migration"
-    - "Incorrect error handling returning success"
-    - "Hardcoded secrets"
-    - "Missing required input validation"
-    - "Duplicate entity / data conflict unhandled"
+    security:
+      - "Hardcoded credentials, API keys, or secrets in source code"
+      - "SQL injection vulnerabilities"
+      - "Command injection vulnerabilities"
+      - "Path traversal vulnerabilities"
+      - "Insecure deserialization"
+      - "Missing authentication/authorization checks"
+      - "Exposed sensitive data in logs or responses"
+      - "Weak cryptographic algorithms"
+      - "Missing input sanitization on user data"
+      - "CORS misconfiguration allowing unauthorized origins"
+    
+    functionality:
+      - "Function returns unresolved promises (missing await)"
+      - "Breaking API changes without migration path"
+      - "Incorrect error handling returning success on failure"
+      - "Race conditions in async operations"
+      - "Infinite loops or recursion without exit condition"
+      - "Memory leaks (unclosed connections, event listeners)"
+      - "Null pointer/undefined access without checks"
+      - "Type mismatches causing runtime errors"
+    
+    data_integrity:
+      - "Duplicate entity creation without conflict handling"
+      - "Missing database transaction rollback on error"
+      - "Data loss scenarios not handled"
+      - "Missing unique constraints validation"
+      - "Cascade delete without safeguards"
   
   high_severity:
-    - "Incorrect logic"
-    - "Missing required awaits"
-    - "Uncaught exceptions"
-    - "Bad return shape"
+    logic:
+      - "Incorrect business logic implementation"
+      - "Missing required awaits on async operations"
+      - "Uncaught exceptions that crash the application"
+      - "Wrong return type or shape"
+      - "Off-by-one errors in loops or array access"
+      - "Incorrect conditional logic"
+      - "Missing null/undefined checks"
+    
+    api:
+      - "Breaking changes to public API without versioning"
+      - "Missing required parameters in API calls"
+      - "Incorrect HTTP status codes"
+      - "Missing error responses"
+      - "Inconsistent API response format"
+    
+    performance:
+      - "N+1 query problems"
+      - "Missing database indexes on frequently queried fields"
+      - "Synchronous operations blocking event loop"
+      - "Large data loaded into memory unnecessarily"
+      - "Missing pagination on list endpoints"
   
   medium_severity:
-    - "Wrong HTTP code"
-    - "Missing edge case tests"
-    - "Performance inefficiency"
+    code_quality:
+      - "Code duplication (DRY principle violation)"
+      - "Functions exceeding 50 lines (SRP violation)"
+      - "Deeply nested conditionals (>3 levels)"
+      - "Magic numbers without named constants"
+      - "Inconsistent naming conventions"
+      - "Missing error messages or generic errors"
+      - "Commented-out code blocks"
+    
+    testing:
+      - "Missing edge case tests"
+      - "Missing error scenario tests"
+      - "Low test coverage on critical paths"
+      - "Missing integration tests for new features"
+      - "Flaky tests without proper mocking"
+    
+    maintainability:
+      - "Missing JSDoc/TSDoc for public APIs"
+      - "Complex logic without explanatory comments"
+      - "Unclear variable or function names"
+      - "Mixed import styles (require vs import)"
+      - "Inconsistent code formatting"
   
   low_severity:
-    - "Commented-out code"
-    - "Mixed imports"
-    - "Missing JSDoc"
-    - "Minor formatting"
+    style:
+      - "Minor formatting inconsistencies"
+      - "Missing trailing commas"
+      - "Inconsistent quote style"
+      - "Unnecessary console.log statements"
+      - "TODO comments without issue tracking"
+      - "Unused imports or variables"
+      - "Missing file-level documentation"
 
 passes:
   intent:
     required: true
-    description: "Identify what the PR is intended to achieve."
+    description: "Identify what the PR is intended to achieve and verify alignment with changes"
+    checks:
+      - "PR title clearly describes the change"
+      - "PR description explains why the change is needed"
+      - "Changes align with stated intent"
+      - "No scope creep (unrelated changes)"
 
   diff_analysis:
     required: true
+    description: "Analyze the diff for patterns and potential issues"
+    checks:
+      - "Identify added, modified, and deleted files"
+      - "Check for large file changes (>500 lines)"
+      - "Identify refactoring vs new features"
+      - "Check for configuration changes"
 
   security:
     required: true
+    description: "Comprehensive security review"
+    checks:
+      - "No hardcoded secrets or credentials"
+      - "Input validation on all user inputs"
+      - "Output encoding to prevent XSS"
+      - "SQL queries use parameterized statements"
+      - "Authentication and authorization checks present"
+      - "Sensitive data not logged"
+      - "Dependencies have no known vulnerabilities"
+      - "HTTPS enforced for external communications"
+      - "Rate limiting on public endpoints"
+      - "CSRF protection on state-changing operations"
     
   correctness:
     required: true
+    description: "Verify code correctness and logic"
+    checks:
+      - "All async functions properly awaited"
+      - "Error handling covers all failure paths"
+      - "Return types match function signatures"
+      - "Null/undefined checks before access"
+      - "Array bounds checked before access"
+      - "Type conversions are safe"
+      - "Edge cases handled (empty arrays, null values)"
+      - "Business logic matches requirements"
 
   api_stability:
     required: true
+    description: "Ensure API compatibility and stability"
+    checks:
+      - "No breaking changes to existing endpoints"
+      - "New endpoints follow REST conventions"
+      - "Proper HTTP status codes used"
+      - "Consistent error response format"
+      - "API versioning strategy followed"
+      - "Backward compatibility maintained"
+      - "Deprecation warnings for old APIs"
 
   tests:
     required: true
     include_required_tests: true
+    description: "Verify test coverage and quality"
+    checks:
+      - "Unit tests for new functions"
+      - "Integration tests for new features"
+      - "Edge case tests present"
+      - "Error scenario tests present"
+      - "Mock external dependencies"
+      - "Tests are deterministic (no flaky tests)"
+      - "Test names clearly describe what they test"
+      - "Minimum 80% code coverage on new code"
+
+  performance:
+    required: true
+    description: "Identify performance issues and optimizations"
+    checks:
+      - "No N+1 query problems"
+      - "Database queries optimized with indexes"
+      - "Pagination implemented for large datasets"
+      - "Caching strategy for frequently accessed data"
+      - "Async operations don't block event loop"
+      - "Memory usage is reasonable"
+      - "No unnecessary data transformations"
+
+  architecture:
+    required: true
+    description: "Evaluate architectural decisions and patterns"
+    checks:
+      - "Follows project's architectural patterns"
+      - "Proper separation of concerns"
+      - "Dependencies flow in correct direction"
+      - "No circular dependencies"
+      - "Appropriate use of design patterns"
+      - "Code is modular and reusable"
+      - "Proper abstraction levels"
+
+  code_quality:
+    required: true
+    description: "Assess overall code quality"
+    checks:
+      - "Functions are small and focused (SRP)"
+      - "No code duplication (DRY)"
+      - "Clear and descriptive naming"
+      - "Consistent code style"
+      - "Appropriate comments for complex logic"
+      - "No dead code or commented-out blocks"
+      - "Proper error messages"
 
   documentation:
     required: true
+    description: "Verify documentation completeness"
+    checks:
+      - "README updated if needed"
+      - "API documentation for new endpoints"
+      - "JSDoc/TSDoc for public functions"
+      - "Configuration changes documented"
+      - "Migration guide for breaking changes"
+      - "Inline comments for complex logic"
 
 decision_logic:
   if_any_blockers: "BLOCK"
-  if_high_severity_more_than_two: "WARN"
+  if_critical_security_issues: "BLOCK"
+  if_high_severity_more_than_three: "REQUEST_CHANGES"
+  if_high_severity_more_than_one: "WARN"
+  if_medium_severity_more_than_five: "WARN"
+  if_missing_tests: "WARN"
   else: "APPROVE"
 
+scoring:
+  excellent: "No issues found, follows all best practices"
+  good: "Minor issues only, no blockers or high severity"
+  needs_improvement: "Multiple medium severity issues or 1-2 high severity"
+  poor: "Multiple high severity issues or any blockers"
+
 post_review_prompt: |
-  After presenting the full structured review, ask:
-  "Would you like me to generate code fixes, patches, and missing tests based on the blockers and severe issues? Reply 'yes'."
+  After presenting the full structured review with inline comments and suggested fixes:
+  
+  1. Provide a "Ready-to-Use Fix Prompt" that developers can copy directly into Bob IDE
+  2. Include specific file paths, line numbers, and code examples
+  3. Prioritize fixes by severity (Critical → High → Medium → Low)
+  4. Make the prompt actionable and complete
+
+# Made with Bob
