@@ -71,6 +71,10 @@ jobs:
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
 
+          # Read changed files and diff
+          CHANGED_FILES=$(sed 's/^/- /' changed_files.txt)
+          DIFF_CONTENT=$(cat pr.diff)
+
           PROMPT="You are running PR Review Playbook.
 
           PR Title:
@@ -80,10 +84,10 @@ jobs:
           ${{ steps.meta.outputs.PR_BODY }}
 
           Changed Files:
-          $(sed 's/^/- /' changed_files.txt)
+          ${CHANGED_FILES}
 
           Diff:
-          $(cat pr.diff)
+          ${DIFF_CONTENT}
 
           Use rules from bob/pr_review_playbook.yaml.
           Run ALL passes:
