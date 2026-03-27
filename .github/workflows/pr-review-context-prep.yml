@@ -105,7 +105,7 @@ jobs:
           
           Include:
           - Intent Summary (what the PR does)
-          - Issue Grouping (Critical, High, Medium, Low) - DESCRIBE the issues, don't list INLINE| comments
+          - Issue Grouping (Critical, High, Medium, Low) - DESCRIBE the issues with file paths and line numbers
           - Security Findings (summary only)
           - Breaking Changes (if any)
           - Required Tests (if missing)
@@ -128,15 +128,12 @@ jobs:
           
           **Why**: Explanation of why this fix is needed
 
-          SECTION 2 - Inline Comments:
-          IMPORTANT: This is the ONLY section where INLINE| formatted comments should appear.
+          SECTION 2 - Inline Comments (INTERNAL USE ONLY - NOT FOR PR COMMENT):
+          IMPORTANT: This section will NOT be posted to the PR comment. It's only for generating inline review comments.
           
-          Add a section titled '## Inline Review Comments'
           For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
           INLINE|filepath|line_number|severity|your detailed comment here
           
-          Do NOT include these INLINE| comments anywhere else in the output.
-
           Example:
           INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability
           INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
@@ -188,12 +185,17 @@ jobs:
           # Run Bob
           bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
       
-      - name: Extract Summary Section
+      - name: Extract Summary Section (without Section 2)
         run: |
-          # Extract only the summary section (before inline comments section)
-          sed '/## Inline Review Comments/,$d' bob_review_output.md > bob_summary.md
+          # Extract everything before Section 2 (Inline Comments)
+          sed '/SECTION 2 - Inline Comments/,$d' bob_review_output.md > bob_summary.md
           
-          # If no inline comments section found, use the whole output
+          # If Section 2 marker not found, extract until "INLINE|" appears
+          if [ ! -s bob_summary.md ]; then
+            sed '/^INLINE|/,$d' bob_review_output.md > bob_summary.md
+          fi
+          
+          # If still empty, use the whole output
           if [ ! -s bob_summary.md ]; then
             cp bob_review_output.md bob_summary.md
           fi
@@ -210,34 +212,151 @@ jobs:
           cat bob_review_output.md
           echo "=== End Bob Output ==="
       
-      - name: Post Inline Review Comments
+      - name: Post Inline Review Comments with Suggested Fixes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Get the commit SHA
           COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
+          gh pr diff ${{ github.event.pull_request.number }} --name-only > changed_files_only.txt
           
-          # Extract and parse inline comments
-          grep "^INLINE|" bob_review_output.md | while IFS='|' read -r prefix filepath line_num severity comment; do
-            if [[ -n "$filepath" ]] && [[ -n "$line_num" ]] && [[ "$line_num" =~ ^[0-9]+$ ]]; then
-              echo "Posting comment to $filepath:$line_num - [$severity] $comment"
+          python3 << 'PYTHON_SCRIPT'
+          import re, subprocess, os
+          
+          commit_sha = os.environ.get('COMMIT_SHA')
+          pr_number = "${{ github.event.pull_request.number }}"
+          repo = "${{ github.repository }}"
+          
+          with open('changed_files_only.txt', 'r') as f:
+              changed_files = set(line.strip() for line in f if line.strip())
+          
+          # Parse the diff to get valid line numbers for each file
+          with open('pr.diff', 'r') as f:
+              diff_content = f.read()
+          
+          # Extract valid line numbers from diff
+          valid_lines = {}
+          current_file = None
+          for line in diff_content.split('\n'):
+              file_match = re.match(r'^\+\+\+ b/(.+)$', line)
+              if file_match:
+                  current_file = file_match.group(1)
+                  valid_lines[current_file] = set()
+                  continue
               
-              # Post review comment using GitHub API
-              gh api \
-                --method POST \
-                -H "Accept: application/vnd.github+json" \
-                /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-                -f body="**[$severity]** $comment" \
-                -f commit_id="$COMMIT_SHA" \
-                -f path="$filepath" \
-                -F line="$line_num" \
-                || echo "⚠️ Failed to post comment for $filepath:$line_num"
-            fi
-          done
+              hunk_match = re.match(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', line)
+              if hunk_match and current_file:
+                  start_line = int(hunk_match.group(1))
+                  count = int(hunk_match.group(2)) if hunk_match.group(2) else 1
+                  for i in range(start_line, start_line + count):
+                      valid_lines[current_file].add(i)
           
-          # Count how many inline comments were found
-          INLINE_COUNT=$(grep -c "^INLINE|" bob_review_output.md || echo "0")
-          echo "Found $INLINE_COUNT inline comments to post"
+          print(f"Valid diff lines per file:")
+          for file, lines in valid_lines.items():
+              print(f"  {file}: {len(lines)} lines")
+          
+          with open('bob_review_output.md', 'r') as f:
+              content = f.read()
+          
+          lines = content.split('\n')
+          comments = []
+          current_comment = None
+          in_code_block = False
+          code_block_lines = []
+          
+          for line in lines:
+              inline_match = re.match(r'^INLINE\|([^|]+)\|(\d+)\|([^|]+)\|(.+)$', line)
+              if inline_match:
+                  if current_comment:
+                      comments.append(current_comment)
+                  current_comment = {
+                      'filepath': inline_match.group(1),
+                      'line': inline_match.group(2),
+                      'severity': inline_match.group(3),
+                      'comment': inline_match.group(4),
+                      'fix': None
+                  }
+                  continue
+              
+              fix_match = re.match(r'^SUGGESTED_FIX\|([^|]+)\|(\d+)$', line)
+              if fix_match:
+                  in_code_block = False
+                  code_block_lines = []
+                  continue
+              
+              if line.startswith('```'):
+                  if not in_code_block:
+                      in_code_block = True
+                      code_block_lines = [line]
+                  else:
+                      code_block_lines.append(line)
+                      if current_comment:
+                          current_comment['fix'] = '\n'.join(code_block_lines)
+                      in_code_block = False
+                      code_block_lines = []
+                  continue
+              
+              if in_code_block:
+                  code_block_lines.append(line)
+          
+          if current_comment:
+              comments.append(current_comment)
+          
+          # Filter comments to only include files in PR and lines in diff
+          valid_comments = []
+          skipped_comments = []
+          
+          for c in comments:
+              if c['filepath'] not in changed_files:
+                  skipped_comments.append((c, "File not in PR"))
+              elif c['filepath'] not in valid_lines:
+                  skipped_comments.append((c, "No diff data for file"))
+              elif int(c['line']) not in valid_lines[c['filepath']]:
+                  skipped_comments.append((c, f"Line {c['line']} not in diff"))
+              else:
+                  valid_comments.append(c)
+          
+          if skipped_comments:
+              print(f"\n⚠️ Skipping {len(skipped_comments)} comments not in PR diff:")
+              for c, reason in skipped_comments[:5]:
+                  print(f"  - {c['filepath']}:{c['line']} - {reason}")
+              if len(skipped_comments) > 5:
+                  print(f"  ... and {len(skipped_comments) - 5} more")
+          
+          print(f"Found {len(comments)} total comments")
+          print(f"Valid comments (in changed files): {len(valid_comments)}")
+          
+          success_count = 0
+          fail_count = 0
+          
+          for comment in valid_comments:
+              body = f"**[{comment['severity']}]** {comment['comment']}"
+              if comment['fix']:
+                  body += f"\n\n### 💡 Suggested Fix:\n{comment['fix']}"
+              
+              print(f"\nAttempting to post comment:")
+              print(f"  File: {comment['filepath']}")
+              print(f"  Line: {comment['line']}")
+              print(f"  Severity: {comment['severity']}")
+              
+              cmd = ['gh', 'api', '--method', 'POST', '-H', 'Accept: application/vnd.github+json',
+                     f'/repos/{repo}/pulls/{pr_number}/comments', '-f', f'body={body}',
+                     '-f', f'commit_id={commit_sha}', '-f', f'path={comment["filepath"]}',
+                     '-F', f'line={comment["line"]}', '-f', 'side=RIGHT']
+              
+              try:
+                  result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                  success_count += 1
+                  print(f"  ✓ Success")
+              except subprocess.CalledProcessError as e:
+                  fail_count += 1
+                  print(f"  ✗ Failed")
+                  print(f"  Error: {e.stderr if e.stderr else 'Unknown error'}")
+          
+          print(f"\n{'='*60}")
+          print(f"Summary: {success_count} comments posted successfully, {fail_count} failed")
+          print(f"Total comments found: {len(comments)}")
+          print(f"Valid comments (in changed files): {len(valid_comments)}")
+          PYTHON_SCRIPT
       
       - name: Create Labels if Not Exist
         env:
