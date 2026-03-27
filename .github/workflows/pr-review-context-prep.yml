@@ -70,20 +70,19 @@ jobs:
       - name: Run BobShell Review
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
+          
+          # Create prompt using Python to avoid shell issues
+          python3 << 'EOF'
+          prompt = """You are running PR Review Playbook.
 
-          PROMPT="You are running PR Review Playbook.
-
-          PR Title:
-          ${{ steps.meta.outputs.PR_TITLE }}
-
-          PR Description:
-          ${{ steps.meta.outputs.PR_BODY }}
+          PR Title: ${{ steps.meta.outputs.PR_TITLE }}
+          PR Description: ${{ steps.meta.outputs.PR_BODY }}
 
           Changed Files:
-          $(sed 's/^/- /' changed_files.txt)
+          CHANGED_FILES_PLACEHOLDER
 
           Diff:
-          $(cat pr.diff)
+          DIFF_CONTENT_PLACEHOLDER
 
           IMPORTANT: Do NOT include any preliminary analysis, thinking process, or "Let me analyze" statements.
           Start DIRECTLY with the structured review output below. No introductory text.
@@ -168,9 +167,26 @@ jobs:
           - Documentation updates if needed
           \`\`\`
           
-          Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications."
+          Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications.
+          """
 
-          bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
+          # Read files
+          with open('changed_files.txt', 'r') as f:
+              changed_files = ''.join('- ' + line for line in f)
+          with open('pr.diff', 'r') as f:
+              diff = f.read()
+
+          # Replace placeholders
+          prompt = prompt.replace('CHANGED_FILES_PLACEHOLDER', changed_files)
+          prompt = prompt.replace('DIFF_CONTENT_PLACEHOLDER', diff)
+
+          # Write prompt
+          with open('prompt.txt', 'w') as f:
+              f.write(prompt)
+          EOF
+
+          # Run Bob
+          bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
       
       - name: Extract Summary Section
         run: |
