@@ -101,17 +101,32 @@ jobs:
 
           SECTION 1 - Summary (for PR comment):
           IMPORTANT: Do NOT include any INLINE| formatted comments in this section.
-          Only provide high-level summaries and descriptions WITHOUT detailed line-by-line issues.
+          Only provide high-level summaries and descriptions.
           
           Include:
           - Intent Summary (what the PR does)
-          - Issue Grouping (Critical, High, Medium, Low) - ONLY provide counts and general categories, NOT specific file paths or line numbers
-          - Security Findings (high-level summary only, no specific lines)
-          - Breaking Changes (if any, described generally)
-          - Required Tests (if missing, described generally)
+          - Issue Grouping (Critical, High, Medium, Low) - DESCRIBE the issues with file paths and line numbers
+          - Security Findings (summary only)
+          - Breaking Changes (if any)
+          - Required Tests (if missing)
+          - Suggested Code Fixes (a dedicated section with specific code examples showing before/after for major issues)
           - Final Verdict (Approve/Request Changes/Comment)
           
-          DO NOT include a "Suggested Code Fixes" section in Section 1. All specific code issues belong in Section 2 as INLINE comments.
+          For the Suggested Code Fixes section, use this format:
+          ## Suggested Code Fixes
+          
+          ### Fix 1: [Issue Title]
+          **File**: path/to/file.ts:line
+          **Severity**: Critical/High/Medium/Low
+          **Issue**: Brief description
+          
+          **Current Code**:
+          (code block with problematic code)
+          
+          **Suggested Fix**:
+          (code block with fixed code)
+          
+          **Why**: Explanation of why this fix is needed
 
           SECTION 2 - Inline Comments (INTERNAL USE ONLY - NOT FOR PR COMMENT):
           IMPORTANT: This section will NOT be posted to the PR comment. It's only for generating inline review comments.
@@ -182,12 +197,12 @@ jobs:
           
           for line in lines:
               # Start skipping when we hit Section 2 header
-              if '💬 Inline Comments' in line or 'SECTION 2' in line or 'Inline Comments' in line:
+              if '💬 Inline Comments' in line or 'SECTION 2' in line:
                   skip_section = True
                   continue
               
               # Stop skipping when we hit Section 3 header
-              if '🔧' in line or 'SECTION 3' in line or 'Ready-to-Use Fix Prompt' in line or 'Copy-Paste Fix Prompt' in line:
+              if '🔧 Suggested Code Fixes' in line or 'SECTION 3' in line:
                   skip_section = False
               
               # Skip INLINE| formatted lines
