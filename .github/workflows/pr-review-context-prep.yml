@@ -98,13 +98,63 @@ jobs:
           Produce a structured review with THREE sections:
 
           SECTION 1 - Summary (for PR comment):
-          - Intent Summary
-          - Issue Grouping (Critical, High, Medium, Low)
-          - Security Findings
-          - Breaking Changes
-          - Required Tests
-          - Final Verdict
-          - Fix Suggestions
+          Start with a statistics section showing:
+          ## 📊 Review Statistics
+          - Total Issues Found: [number]
+          - Critical: [number]
+          - High: [number]
+          - Medium: [number]
+          - Low: [number]
+          - Files Reviewed: [number]
+          - Lines Changed: [approximate number from diff]
+
+          Then include:
+          ## 🎯 Intent Summary
+          [Brief description of what the PR aims to accomplish]
+
+          ## 🐛 Issues Found
+          Group issues by severity with specific examples:
+          
+          ### Critical Issues
+          [List critical issues if any]
+          
+          ### High Priority Issues
+          [List high priority issues if any]
+          
+          ### Medium Priority Issues
+          [List medium priority issues if any]
+          
+          ### Low Priority Issues
+          [List low priority issues if any]
+
+          ## 🔒 Security Findings
+          [List any security concerns, or state "No security issues found"]
+
+          ## ⚠️ Breaking Changes
+          [List any breaking changes, or state "No breaking changes detected"]
+
+          ## 🧪 Test Coverage
+          [Assess test coverage and list any missing tests]
+
+          ## 🔧 Fix Suggestions
+          Provide a detailed section with actionable fix suggestions:
+          
+          For each major issue, include:
+          1. **What needs to be fixed**: Clear description
+          2. **Why it matters**: Impact and reasoning
+          3. **How to fix it**: Step-by-step guidance
+          4. **Priority**: Critical/High/Medium/Low
+          
+          Example format:
+          ### Fix 1: [Issue Title]
+          - **File**: src/example.js:42
+          - **Severity**: High
+          - **Issue**: Description of the problem
+          - **Recommendation**: Specific steps to fix
+          - **Impact**: What happens if not fixed
+
+          ## ✅ Final Verdict
+          [Approve / Request Changes / Comment] with clear reasoning
 
           SECTION 2 - Inline Comments with Suggested Fixes:
           After your summary, add a section titled '## Inline Review Comments'
@@ -197,16 +247,26 @@ jobs:
           # Get the commit SHA
           COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
           
+          # Get the list of changed files with their line ranges
+          gh pr diff ${{ github.event.pull_request.number }} --name-only > changed_files_only.txt
+          
           # Use Python to parse the output more reliably
           python3 << 'PYTHON_SCRIPT'
           import re
           import subprocess
           import sys
           import os
+          import json
           
           commit_sha = os.environ.get('COMMIT_SHA')
           pr_number = "${{ github.event.pull_request.number }}"
           repo = "${{ github.repository }}"
+          
+          # Read changed files
+          with open('changed_files_only.txt', 'r') as f:
+              changed_files = set(line.strip() for line in f if line.strip())
+          
+          print(f"Changed files in PR: {changed_files}")
           
           # Read the Bob output
           with open('bob_review_output.md', 'r') as f:
@@ -263,16 +323,28 @@ jobs:
           if current_comment:
               comments.append(current_comment)
           
+          # Filter comments to only include files that were actually changed
+          valid_comments = [c for c in comments if c['filepath'] in changed_files]
+          skipped_comments = [c for c in comments if c['filepath'] not in changed_files]
+          
+          if skipped_comments:
+              print(f"\n⚠️ Skipping {len(skipped_comments)} comments for files not in PR diff:")
+              for c in skipped_comments:
+                  print(f"  - {c['filepath']}:{c['line']}")
+          
           # Post comments
-          for comment in comments:
+          success_count = 0
+          fail_count = 0
+          
+          for comment in valid_comments:
               body = f"**[{comment['severity']}]** {comment['comment']}"
               
               if comment['fix']:
                   body += f"\n\n### 💡 Suggested Fix:\n{comment['fix']}"
               
-              print(f"Posting comment to {comment['filepath']}:{comment['line']}")
+              print(f"\nPosting comment to {comment['filepath']}:{comment['line']}")
               
-              # Use gh api to post comment
+              # Use gh api to post comment with side parameter for new API
               cmd = [
                   'gh', 'api',
                   '--method', 'POST',
@@ -281,16 +353,25 @@ jobs:
                   '-f', f'body={body}',
                   '-f', f'commit_id={commit_sha}',
                   '-f', f'path={comment["filepath"]}',
-                  '-F', f'line={comment["line"]}'
+                  '-F', f'line={comment["line"]}',
+                  '-f', 'side=RIGHT'
               ]
               
               try:
-                  subprocess.run(cmd, check=True, capture_output=True)
+                  result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                  success_count += 1
+                  print(f"✓ Successfully posted comment")
               except subprocess.CalledProcessError as e:
-                  print(f"⚠️ Failed to post comment for {comment['filepath']}:{comment['line']}")
-                  print(f"Error: {e.stderr.decode()}")
+                  fail_count += 1
+                  error_msg = e.stderr if e.stderr else str(e)
+                  print(f"⚠️ Failed to post comment")
+                  print(f"Error: {error_msg}")
+                  print(f"This might be because line {comment['line']} is not part of the diff")
           
-          print(f"Found {len(comments)} inline comments with suggested fixes to post")
+          print(f"\n{'='*60}")
+          print(f"Summary: {success_count} comments posted successfully, {fail_count} failed")
+          print(f"Total inline comments found: {len(comments)}")
+          print(f"Valid comments (in changed files): {len(valid_comments)}")
           PYTHON_SCRIPT
       
       - name: Create Labels if Not Exist
