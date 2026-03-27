@@ -48,7 +48,7 @@ jobs:
           gh pr view ${{ github.event.pull_request.number }} --json files -q '.files[].path' > changed_files.txt
       - name: Install BobShell
         run: |
-          curl -s https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh | bash
+          curl -s https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh | bash -s -- --pm npm
           echo "BobShell installed."
       - name: Export BobShell API Key
         run: |
