@@ -105,28 +105,14 @@ jobs:
           
           Include:
           - Intent Summary (what the PR does)
-          - Issue Grouping (Critical, High, Medium, Low) - DESCRIBE the issues with file paths and line numbers
-          - Security Findings (summary only)
-          - Breaking Changes (if any)
-          - Required Tests (if missing)
-          - Suggested Code Fixes (a dedicated section with specific code examples showing before/after for major issues)
+          - Issue Grouping (Critical, High, Medium, Low) - ONLY provide counts and general categories, NOT specific file paths or line numbers
+          - Security Findings (high-level summary only, no specific lines)
+          - Breaking Changes (if any, described generally)
+          - Required Tests (if missing, described generally)
           - Final Verdict (Approve/Request Changes/Comment)
           
-          For the Suggested Code Fixes section, use this format:
-          ## Suggested Code Fixes
-          ### Fix 1: [Issue Title]
-          **File**: path/to/file.ts:line
-          **Severity**: Critical/High/Medium/Low
-          **Issue**: Brief description
-          
-          **Current Code**:
-          (code block with problematic code)
-          
-          **Suggested Fix**:
-          (code block with fixed code)
-          
-          **Why**: Explanation of why this fix is needed
-          
+          DO NOT include a "Suggested Code Fixes" section in Section 1. All specific code issues belong in Section 2 as INLINE comments.
+
           SECTION 2 - Inline Comments (INTERNAL USE ONLY - NOT FOR PR COMMENT):
           IMPORTANT: This section will NOT be posted to the PR comment. It's only for generating inline review comments.
           
