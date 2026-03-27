@@ -70,187 +70,75 @@ jobs:
       - name: Run BobShell Review
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
+          
+          # Create prompt using Python to avoid shell issues
+          python3 << 'EOF'
+          prompt = """You are running PR Review Playbook.
 
-          # Create prompt file to avoid shell interpretation issues
-          cat > prompt.txt << 'PROMPT_EOF'
-You are running PR Review Playbook.
+          PR Title: ${{ steps.meta.outputs.PR_TITLE }}
+          PR Description: ${{ steps.meta.outputs.PR_BODY }}
 
-PR Title:
-${{ steps.meta.outputs.PR_TITLE }}
+          Changed Files:
+          CHANGED_FILES_PLACEHOLDER
 
-PR Description:
-${{ steps.meta.outputs.PR_BODY }}
+          Diff:
+          DIFF_CONTENT_PLACEHOLDER
 
-Changed Files:
-CHANGED_FILES_PLACEHOLDER
+          Use rules from bob/pr_review_playbook.yaml.
+          Run ALL passes: Intent, Security, Correctness, API compatibility, Test adequacy, Performance, Documentation
 
-Diff:
-DIFF_CONTENT_PLACEHOLDER
+          Produce a structured review with THREE sections:
 
-Use rules from bob/pr_review_playbook.yaml.
-Run ALL passes:
-- Intent
-- Security
-- Correctness
-- API compatibility
-- Test adequacy
-- Performance
-- Documentation
+          SECTION 1 - Summary (for PR comment):
+          Start with: ## Review Statistics
+          - Total Issues Found, Critical, High, Medium, Low, Files Reviewed, Lines Changed
 
-Produce a structured review with THREE sections:
+          Then include: ## Intent Summary, ## Issues Found (grouped by severity), ## Security Findings, ## Breaking Changes, ## Test Coverage
 
-SECTION 1 - Summary (for PR comment):
-Start with a statistics section showing:
-## Review Statistics
-- Total Issues Found: [number]
-- Critical: [number]
-- High: [number]
-- Medium: [number]
-- Low: [number]
-- Files Reviewed: [number]
-- Lines Changed: [approximate number from diff]
+          ## Fix Suggestions - Provide detailed, actionable fixes with: What needs to be fixed, Why it matters, How to fix it, Priority
+          Example: ### Fix 1: [Title] - File, Severity, Issue, Recommendation, Impact
 
-Then include:
-## Intent Summary
-[Brief description of what the PR aims to accomplish]
+          ## Final Verdict - Approve/Request Changes/Comment with reasoning
 
-## Issues Found
-Group issues by severity with specific examples:
+          SECTION 2 - Inline Comments with Suggested Fixes:
+          ## Inline Review Comments
+          Format: INLINE|filepath|line_number|severity|Issue description
+          SUGGESTED_FIX|filepath|line_number
+          ```language
+          code fix here
+          ```
 
-### Critical Issues
-[List critical issues if any]
+          SECTION 3 - Copy-Paste Fix Prompt:
+          ## Ready-to-Use Fix Prompt
+          ```
+          Please fix the following issues found in the PR review:
+          [List each issue with file path, line number, description, suggested fix, context]
+          Changed files to review: [list]
+          Maintain: code style, functionality, tests, documentation
+          ```
+          """
 
-### High Priority Issues
-[List high priority issues if any]
+          # Read files
+          with open('changed_files.txt', 'r') as f:
+              changed_files = ''.join('- ' + line for line in f)
+          with open('pr.diff', 'r') as f:
+              diff = f.read()
 
-### Medium Priority Issues
-[List medium priority issues if any]
+          # Replace placeholders
+          prompt = prompt.replace('CHANGED_FILES_PLACEHOLDER', changed_files)
+          prompt = prompt.replace('DIFF_CONTENT_PLACEHOLDER', diff)
 
-### Low Priority Issues
-[List low priority issues if any]
+          # Write prompt
+          with open('prompt.txt', 'w') as f:
+              f.write(prompt)
+          EOF
 
-## Security Findings
-[List any security concerns, or state "No security issues found"]
-
-## Breaking Changes
-[List any breaking changes, or state "No breaking changes detected"]
-
-## Test Coverage
-[Assess test coverage and list any missing tests]
-
-## Fix Suggestions
-Provide a detailed section with actionable fix suggestions:
-
-For each major issue, include:
-1. **What needs to be fixed**: Clear description
-2. **Why it matters**: Impact and reasoning
-3. **How to fix it**: Step-by-step guidance
-4. **Priority**: Critical/High/Medium/Low
-
-Example format:
-### Fix 1: [Issue Title]
-- **File**: src/example.js:42
-- **Severity**: High
-- **Issue**: Description of the problem
-- **Recommendation**: Specific steps to fix
-- **Impact**: What happens if not fixed
-
-## Final Verdict
-[Approve / Request Changes / Comment] with clear reasoning
-
-SECTION 2 - Inline Comments with Suggested Fixes:
-After your summary, add a section titled '## Inline Review Comments'
-For EACH specific issue you find in the code, provide a comment in this EXACT format:
-INLINE|filepath|line_number|severity|Issue description
-
-SUGGESTED_FIX|filepath|line_number
-```language
-// Suggested code fix here
-```
-
-Example:
-INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability. Use parameterized queries instead.
-
-SUGGESTED_FIX|src/app.js|42
-```javascript
-const query = 'SELECT * FROM users WHERE id = ?';
-db.query(query, [userId], (err, results) => {
-  // handle results
-});
-```
-
-INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
-
-SUGGESTED_FIX|src/utils.js|15
-```javascript
-const maxRetries = 3;
-```
-
-Make sure to:
-- Include the actual file paths from the changed files list
-- Provide specific line numbers where issues occur
-- Include a code block with the suggested fix using proper syntax highlighting
-- Show enough context in the fix so it's clear what needs to be changed
-
-SECTION 3 - Copy-Paste Fix Prompt:
-At the end, create a section titled '## Ready-to-Use Fix Prompt'
-Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
-
-Format it as a code block with clear instructions:
-```
-Please fix the following issues found in the PR review:
-
-[List each issue with:
-- File path and line number
-- Issue description
-- Suggested fix approach
-- Any relevant context]
-
-Changed files to review:
-[List the changed files]
-
-Please apply these fixes while maintaining:
-- Code style consistency
-- Existing functionality
-- Test coverage
-- Documentation updates if needed
-```
-
-Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications.
-PROMPT_EOF
-
-          # Replace placeholders with actual content using Python
-          python3 << 'PYTHON_REPLACE'
-import sys
-
-# Read the files
-with open('changed_files.txt', 'r') as f:
-    changed_files = ''.join('- ' + line for line in f)
-
-with open('pr.diff', 'r') as f:
-    diff_content = f.read()
-
-with open('prompt.txt', 'r') as f:
-    prompt = f.read()
-
-# Replace placeholders
-prompt = prompt.replace('CHANGED_FILES_PLACEHOLDER', changed_files)
-prompt = prompt.replace('DIFF_CONTENT_PLACEHOLDER', diff_content)
-
-# Write the final prompt
-with open('prompt_final.txt', 'w') as f:
-    f.write(prompt)
-PYTHON_REPLACE
-
-          # Run bob with the prompt file
-          bob --chat-mode=advanced -p "$(cat prompt_final.txt)" > bob_review_output.md
+          # Run Bob
+          bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
       
       - name: Extract Summary Section
         run: |
-          # Extract only the summary section (before inline comments section)
           sed '/## Inline Review Comments/,$d' bob_review_output.md > bob_summary.md
-          
-          # If no inline comments section found, use the whole output
           if [ ! -s bob_summary.md ]; then
             cp bob_review_output.md bob_summary.md
           fi
@@ -271,35 +159,22 @@ PYTHON_REPLACE
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Get the commit SHA
           COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
-          
-          # Get the list of changed files with their line ranges
           gh pr diff ${{ github.event.pull_request.number }} --name-only > changed_files_only.txt
           
-          # Use Python to parse the output more reliably
           python3 << 'PYTHON_SCRIPT'
-          import re
-          import subprocess
-          import sys
-          import os
-          import json
+          import re, subprocess, os
           
           commit_sha = os.environ.get('COMMIT_SHA')
           pr_number = "${{ github.event.pull_request.number }}"
           repo = "${{ github.repository }}"
           
-          # Read changed files
           with open('changed_files_only.txt', 'r') as f:
               changed_files = set(line.strip() for line in f if line.strip())
           
-          print(f"Changed files in PR: {changed_files}")
-          
-          # Read the Bob output
           with open('bob_review_output.md', 'r') as f:
               content = f.read()
           
-          # Parse INLINE comments and SUGGESTED_FIX blocks
           lines = content.split('\n')
           comments = []
           current_comment = None
@@ -307,13 +182,10 @@ PYTHON_REPLACE
           code_block_lines = []
           
           for line in lines:
-              # Match INLINE comment
               inline_match = re.match(r'^INLINE\|([^|]+)\|(\d+)\|([^|]+)\|(.+)$', line)
               if inline_match:
-                  # Save previous comment if exists
                   if current_comment:
                       comments.append(current_comment)
-                  
                   current_comment = {
                       'filepath': inline_match.group(1),
                       'line': inline_match.group(2),
@@ -323,14 +195,12 @@ PYTHON_REPLACE
                   }
                   continue
               
-              # Match SUGGESTED_FIX marker
               fix_match = re.match(r'^SUGGESTED_FIX\|([^|]+)\|(\d+)$', line)
               if fix_match:
                   in_code_block = False
                   code_block_lines = []
                   continue
               
-              # Handle code blocks
               if line.startswith('```'):
                   if not in_code_block:
                       in_code_block = True
@@ -346,66 +216,36 @@ PYTHON_REPLACE
               if in_code_block:
                   code_block_lines.append(line)
           
-          # Add last comment
           if current_comment:
               comments.append(current_comment)
           
-          # Filter comments to only include files that were actually changed
           valid_comments = [c for c in comments if c['filepath'] in changed_files]
-          skipped_comments = [c for c in comments if c['filepath'] not in changed_files]
-          
-          if skipped_comments:
-              print(f"\n⚠️ Skipping {len(skipped_comments)} comments for files not in PR diff:")
-              for c in skipped_comments:
-                  print(f"  - {c['filepath']}:{c['line']}")
-          
-          # Post comments
           success_count = 0
           fail_count = 0
           
           for comment in valid_comments:
               body = f"**[{comment['severity']}]** {comment['comment']}"
-              
               if comment['fix']:
                   body += f"\n\n### 💡 Suggested Fix:\n{comment['fix']}"
               
-              print(f"\nPosting comment to {comment['filepath']}:{comment['line']}")
-              
-              # Use gh api to post comment with side parameter for new API
-              cmd = [
-                  'gh', 'api',
-                  '--method', 'POST',
-                  '-H', 'Accept: application/vnd.github+json',
-                  f'/repos/{repo}/pulls/{pr_number}/comments',
-                  '-f', f'body={body}',
-                  '-f', f'commit_id={commit_sha}',
-                  '-f', f'path={comment["filepath"]}',
-                  '-F', f'line={comment["line"]}',
-                  '-f', 'side=RIGHT'
-              ]
+              cmd = ['gh', 'api', '--method', 'POST', '-H', 'Accept: application/vnd.github+json',
+                     f'/repos/{repo}/pulls/{pr_number}/comments', '-f', f'body={body}',
+                     '-f', f'commit_id={commit_sha}', '-f', f'path={comment["filepath"]}',
+                     '-F', f'line={comment["line"]}', '-f', 'side=RIGHT']
               
               try:
-                  result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                  subprocess.run(cmd, check=True, capture_output=True, text=True)
                   success_count += 1
-                  print(f"✓ Successfully posted comment")
-              except subprocess.CalledProcessError as e:
+              except subprocess.CalledProcessError:
                   fail_count += 1
-                  error_msg = e.stderr if e.stderr else str(e)
-                  print(f"⚠️ Failed to post comment")
-                  print(f"Error: {error_msg}")
-                  print(f"This might be because line {comment['line']} is not part of the diff")
           
-          print(f"\n{'='*60}")
-          print(f"Summary: {success_count} comments posted successfully, {fail_count} failed")
-          print(f"Total inline comments found: {len(comments)}")
-          print(f"Valid comments (in changed files): {len(valid_comments)}")
+          print(f"Summary: {success_count} comments posted, {fail_count} failed")
           PYTHON_SCRIPT
       
       - name: Create Labels if Not Exist
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Define all possible labels with colors
           declare -A LABEL_COLORS=(
             ["bob-validated"]="0e8a16"
             ["severity-critical"]="d73a4a"
@@ -417,51 +257,42 @@ PYTHON_REPLACE
             ["performance-review"]="1d76db"
           )
           
-          # Create each label if it doesn't exist
           for label in "${!LABEL_COLORS[@]}"; do
             color="${LABEL_COLORS[$label]}"
             gh label create "$label" --color "$color" --force 2>/dev/null || true
           done
-          
-          echo "Labels created/verified"
       
       - name: Analyze Review and Apply Labels
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Initialize labels array
           LABELS="bob-validated"
           
-          # Check for critical issues
           if grep -qi "critical" bob_review_output.md; then
             LABELS="$LABELS,severity-critical"
           fi
           
-          # Check for high severity issues
           if grep -qi "high" bob_review_output.md && ! echo "$LABELS" | grep -q "severity-critical"; then
             LABELS="$LABELS,severity-high"
           fi
           
-          # Check for medium severity issues
           if grep -qi "medium" bob_review_output.md && ! echo "$LABELS" | grep -q "severity-"; then
             LABELS="$LABELS,severity-medium"
           fi
           
-          # Check if fixes are suggested
           if grep -qi "fix" bob_review_output.md || grep -qi "suggestion" bob_review_output.md; then
             LABELS="$LABELS,fix-needed"
           fi
           
-          # Check for security issues
           if grep -qi "security" bob_review_output.md; then
             LABELS="$LABELS,security-review"
           fi
           
-          # Check for performance issues
           if grep -qi "performance" bob_review_output.md; then
             LABELS="$LABELS,performance-review"
           fi
           
-          # Apply labels to PR
           echo "Applying labels: $LABELS"
           gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABELS"
+
+# Made with Bob
