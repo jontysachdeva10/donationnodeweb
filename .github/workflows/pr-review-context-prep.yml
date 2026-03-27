@@ -106,18 +106,7 @@ jobs:
           - Final Verdict
           - Fix Suggestions
 
-          SECTION 2 - Inline Comments:
-          After your summary, add a section titled '## Inline Review Comments'
-          For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
-          INLINE|filepath|line_number|severity|your detailed comment here
-
-          Example:
-          INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability
-          INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
-
-          Make sure to include the actual file paths from the changed files list and specific line numbers where issues occur.
-
-          SECTION 3 - Copy-Paste Fix Prompt:
+          SECTION 2 - Copy-Paste Fix Prompt:
           At the end, create a section titled '## 🔧 Ready-to-Use Fix Prompt'
           Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
           
@@ -150,11 +139,23 @@ jobs:
           # Remove all INLINE| entries from the output
           grep -v "^INLINE|" bob_review_output.md > bob_output_no_inline.md
           
-          # Extract only the summary section (before inline comments section)
-          sed '/## Inline Review Comments/,$d' bob_output_no_inline.md > bob_summary.md
+          # Extract content starting from first ## heading (skip Bob's analysis)
+          # This captures the structured review sections only
+          sed -n '/^## /,$p' bob_output_no_inline.md > bob_with_headers.md
           
-          # If no inline comments section found, use the filtered output
+          # Remove inline comments section and everything after
+          sed '/## Inline Review Comments/,$d' bob_with_headers.md > bob_summary.md
+          
+          # If extraction failed, try alternative approach
           if [ ! -s bob_summary.md ]; then
+            # Look for "Intent Summary" or similar structured content
+            sed -n '/^## Intent Summary/,$p' bob_output_no_inline.md | \
+              sed '/## Inline Review Comments/,$d' > bob_summary.md
+          fi
+          
+          # Last fallback - use filtered output but warn
+          if [ ! -s bob_summary.md ]; then
+            echo "⚠️ Warning: Could not extract structured sections, using full output"
             cp bob_output_no_inline.md bob_summary.md
           fi
       
