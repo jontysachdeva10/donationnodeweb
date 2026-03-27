@@ -70,20 +70,22 @@ jobs:
       - name: Run BobShell Review
         run: |
           export BOBSHELL_API_KEY="sk-vXQ-uRFhlKoQM7dVgqq74w"
+          
+          # Create prompt using Python to avoid shell issues
+          python3 << 'EOF'
+          prompt = """You are running PR Review Playbook.
 
-          PROMPT="You are running PR Review Playbook.
-
-          PR Title:
-          ${{ steps.meta.outputs.PR_TITLE }}
-
-          PR Description:
-          ${{ steps.meta.outputs.PR_BODY }}
+          PR Title: ${{ steps.meta.outputs.PR_TITLE }}
+          PR Description: ${{ steps.meta.outputs.PR_BODY }}
 
           Changed Files:
-          $(sed 's/^/- /' changed_files.txt)
+          CHANGED_FILES_PLACEHOLDER
 
           Diff:
-          $(cat pr.diff)
+          DIFF_CONTENT_PLACEHOLDER
+
+          IMPORTANT: Do NOT include any preliminary analysis, thinking process, or "Let me analyze" statements.
+          Start DIRECTLY with the structured review output below. No introductory text.
 
           Use rules from bob/pr_review_playbook.yaml.
           Run ALL passes:
@@ -95,18 +97,49 @@ jobs:
           - Performance
           - Documentation
 
-          Produce a structured review with THREE sections:
+          Produce a structured review with THREE sections (start immediately with Section 1 heading):
 
           SECTION 1 - Summary (for PR comment):
-          - Intent Summary
-          - Issue Grouping (Critical, High, Medium, Low)
-          - Security Findings
-          - Breaking Changes
-          - Required Tests
-          - Final Verdict
-          - Fix Suggestions
+          IMPORTANT: Do NOT include any INLINE| formatted comments in this section.
+          Only provide high-level summaries and descriptions WITHOUT detailed line-by-line issues.
+          
+          Include:
+          - Intent Summary (what the PR does)
+          - Issue Grouping (Critical, High, Medium, Low) - DESCRIBE the issues with file paths and line numbers
+          - Security Findings (summary only)
+          - Breaking Changes (if any)
+          - Required Tests (if missing)
+          - Suggested Code Fixes (a dedicated section with specific code examples showing before/after for major issues)
+          - Final Verdict (Approve/Request Changes/Comment)
+          
+          For the Suggested Code Fixes section, use this format:
+          ## Suggested Code Fixes
+          ### Fix 1: [Issue Title]
+          **File**: path/to/file.ts:line
+          **Severity**: Critical/High/Medium/Low
+          **Issue**: Brief description
+          
+          **Current Code**:
+          (code block with problematic code)
+          
+          **Suggested Fix**:
+          (code block with fixed code)
+          
+          **Why**: Explanation of why this fix is needed
+          
+          SECTION 2 - Inline Comments (INTERNAL USE ONLY - NOT FOR PR COMMENT):
+          IMPORTANT: This section will NOT be posted to the PR comment. It's only for generating inline review comments.
+          
+          For EACH specific issue you find in the code, provide a comment in this EXACT format (one per line):
+          INLINE|filepath|line_number|severity|your detailed comment here
+          
+          Example:
+          INLINE|src/app.js|42|High|This function has a potential SQL injection vulnerability
+          INLINE|src/utils.js|15|Medium|Consider using const instead of let for immutable variables
 
-          SECTION 2 - Copy-Paste Fix Prompt:
+          Make sure to include the actual file paths from the changed files list and specific line numbers where issues occur.
+
+          SECTION 3 - Copy-Paste Fix Prompt:
           At the end, create a section titled '## 🔧 Ready-to-Use Fix Prompt'
           Generate a comprehensive, copy-paste ready prompt that users can directly use in Bob IDE to fix all the issues found.
           
@@ -130,34 +163,66 @@ jobs:
           - Documentation updates if needed
           \`\`\`
           
-          Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications."
+          Make this prompt detailed and actionable so the user can copy it directly into Bob IDE without modifications.
+          """
 
-          bob --chat-mode=advanced -p "$PROMPT" > bob_review_output.md
+          # Read files
+          with open('changed_files.txt', 'r') as f:
+              changed_files = ''.join('- ' + line for line in f)
+          with open('pr.diff', 'r') as f:
+              diff = f.read()
+
+          # Replace placeholders
+          prompt = prompt.replace('CHANGED_FILES_PLACEHOLDER', changed_files)
+          prompt = prompt.replace('DIFF_CONTENT_PLACEHOLDER', diff)
+
+          # Write prompt
+          with open('prompt.txt', 'w') as f:
+              f.write(prompt)
+          EOF
+
+          # Run Bob
+          bob --chat-mode=advanced -p "$(cat prompt.txt)" > bob_review_output.md
       
-      - name: Extract Summary Section
+      - name: Extract Summary Section (without Section 2)
         run: |
-          # Remove all INLINE| entries from the output
-          grep -v "^INLINE|" bob_review_output.md > bob_output_no_inline.md
+          python3 << 'PYTHON_SCRIPT'
+          with open('bob_review_output.md', 'r') as f:
+              content = f.read()
           
-          # Extract content starting from first ## heading (skip Bob's analysis)
-          # This captures the structured review sections only
-          sed -n '/^## /,$p' bob_output_no_inline.md > bob_with_headers.md
+          lines = content.split('\n')
+          filtered_lines = []
+          skip_section = False
           
-          # Remove inline comments section and everything after
-          sed '/## Inline Review Comments/,$d' bob_with_headers.md > bob_summary.md
+          for line in lines:
+              # Start skipping when we hit Section 2 header
+              if '💬 Inline Comments' in line or 'SECTION 2' in line or 'Inline Comments' in line:
+                  skip_section = True
+                  continue
+              
+              # Stop skipping when we hit Section 3 header
+              if '🔧' in line or 'SECTION 3' in line or 'Ready-to-Use Fix Prompt' in line or 'Copy-Paste Fix Prompt' in line:
+                  skip_section = False
+              
+              # Skip INLINE| formatted lines
+              if line.startswith('INLINE|'):
+                  continue
+              
+              # Skip SUGGESTED_FIX| formatted lines
+              if line.startswith('SUGGESTED_FIX|'):
+                  continue
+              
+              # Add line if we're not in skip mode
+              if not skip_section:
+                  filtered_lines.append(line)
           
-          # If extraction failed, try alternative approach
-          if [ ! -s bob_summary.md ]; then
-            # Look for "Intent Summary" or similar structured content
-            sed -n '/^## Intent Summary/,$p' bob_output_no_inline.md | \
-              sed '/## Inline Review Comments/,$d' > bob_summary.md
-          fi
+          # Write filtered content
+          with open('bob_summary.md', 'w') as f:
+              f.write('\n'.join(filtered_lines))
           
-          # Last fallback - use filtered output but warn
-          if [ ! -s bob_summary.md ]; then
-            echo "⚠️ Warning: Could not extract structured sections, using full output"
-            cp bob_output_no_inline.md bob_summary.md
-          fi
+          print(f"Original lines: {len(lines)}")
+          print(f"Filtered lines: {len(filtered_lines)}")
+          PYTHON_SCRIPT
       
       - name: Post Summary to PR
         env:
@@ -171,34 +236,151 @@ jobs:
           cat bob_review_output.md
           echo "=== End Bob Output ==="
       
-      - name: Post Inline Review Comments
+      - name: Post Inline Review Comments with Suggested Fixes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Get the commit SHA
           COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)
+          gh pr diff ${{ github.event.pull_request.number }} --name-only > changed_files_only.txt
           
-          # Extract and parse inline comments
-          grep "^INLINE|" bob_review_output.md | while IFS='|' read -r prefix filepath line_num severity comment; do
-            if [[ -n "$filepath" ]] && [[ -n "$line_num" ]] && [[ "$line_num" =~ ^[0-9]+$ ]]; then
-              echo "Posting comment to $filepath:$line_num - [$severity] $comment"
+          python3 << 'PYTHON_SCRIPT'
+          import re, subprocess, os
+          
+          commit_sha = os.environ.get('COMMIT_SHA')
+          pr_number = "${{ github.event.pull_request.number }}"
+          repo = "${{ github.repository }}"
+          
+          with open('changed_files_only.txt', 'r') as f:
+              changed_files = set(line.strip() for line in f if line.strip())
+          
+          # Parse the diff to get valid line numbers for each file
+          with open('pr.diff', 'r') as f:
+              diff_content = f.read()
+          
+          # Extract valid line numbers from diff
+          valid_lines = {}
+          current_file = None
+          for line in diff_content.split('\n'):
+              file_match = re.match(r'^\+\+\+ b/(.+)$', line)
+              if file_match:
+                  current_file = file_match.group(1)
+                  valid_lines[current_file] = set()
+                  continue
               
-              # Post review comment using GitHub API
-              gh api \
-                --method POST \
-                -H "Accept: application/vnd.github+json" \
-                /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-                -f body="**[$severity]** $comment" \
-                -f commit_id="$COMMIT_SHA" \
-                -f path="$filepath" \
-                -F line="$line_num" \
-                || echo "⚠️ Failed to post comment for $filepath:$line_num"
-            fi
-          done
+              hunk_match = re.match(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', line)
+              if hunk_match and current_file:
+                  start_line = int(hunk_match.group(1))
+                  count = int(hunk_match.group(2)) if hunk_match.group(2) else 1
+                  for i in range(start_line, start_line + count):
+                      valid_lines[current_file].add(i)
           
-          # Count how many inline comments were found
-          INLINE_COUNT=$(grep -c "^INLINE|" bob_review_output.md || echo "0")
-          echo "Found $INLINE_COUNT inline comments to post"
+          print(f"Valid diff lines per file:")
+          for file, lines in valid_lines.items():
+              print(f"  {file}: {len(lines)} lines")
+          
+          with open('bob_review_output.md', 'r') as f:
+              content = f.read()
+          
+          lines = content.split('\n')
+          comments = []
+          current_comment = None
+          in_code_block = False
+          code_block_lines = []
+          
+          for line in lines:
+              inline_match = re.match(r'^INLINE\|([^|]+)\|(\d+)\|([^|]+)\|(.+)$', line)
+              if inline_match:
+                  if current_comment:
+                      comments.append(current_comment)
+                  current_comment = {
+                      'filepath': inline_match.group(1),
+                      'line': inline_match.group(2),
+                      'severity': inline_match.group(3),
+                      'comment': inline_match.group(4),
+                      'fix': None
+                  }
+                  continue
+              
+              fix_match = re.match(r'^SUGGESTED_FIX\|([^|]+)\|(\d+)$', line)
+              if fix_match:
+                  in_code_block = False
+                  code_block_lines = []
+                  continue
+              
+              if line.startswith('```'):
+                  if not in_code_block:
+                      in_code_block = True
+                      code_block_lines = [line]
+                  else:
+                      code_block_lines.append(line)
+                      if current_comment:
+                          current_comment['fix'] = '\n'.join(code_block_lines)
+                      in_code_block = False
+                      code_block_lines = []
+                  continue
+              
+              if in_code_block:
+                  code_block_lines.append(line)
+          
+          if current_comment:
+              comments.append(current_comment)
+          
+          # Filter comments to only include files in PR and lines in diff
+          valid_comments = []
+          skipped_comments = []
+          
+          for c in comments:
+              if c['filepath'] not in changed_files:
+                  skipped_comments.append((c, "File not in PR"))
+              elif c['filepath'] not in valid_lines:
+                  skipped_comments.append((c, "No diff data for file"))
+              elif int(c['line']) not in valid_lines[c['filepath']]:
+                  skipped_comments.append((c, f"Line {c['line']} not in diff"))
+              else:
+                  valid_comments.append(c)
+          
+          if skipped_comments:
+              print(f"\n⚠️ Skipping {len(skipped_comments)} comments not in PR diff:")
+              for c, reason in skipped_comments[:5]:
+                  print(f"  - {c['filepath']}:{c['line']} - {reason}")
+              if len(skipped_comments) > 5:
+                  print(f"  ... and {len(skipped_comments) - 5} more")
+          
+          print(f"Found {len(comments)} total comments")
+          print(f"Valid comments (in changed files): {len(valid_comments)}")
+          
+          success_count = 0
+          fail_count = 0
+          
+          for comment in valid_comments:
+              body = f"**[{comment['severity']}]** {comment['comment']}"
+              if comment['fix']:
+                  body += f"\n\n### 💡 Suggested Fix:\n{comment['fix']}"
+              
+              print(f"\nAttempting to post comment:")
+              print(f"  File: {comment['filepath']}")
+              print(f"  Line: {comment['line']}")
+              print(f"  Severity: {comment['severity']}")
+              
+              cmd = ['gh', 'api', '--method', 'POST', '-H', 'Accept: application/vnd.github+json',
+                     f'/repos/{repo}/pulls/{pr_number}/comments', '-f', f'body={body}',
+                     '-f', f'commit_id={commit_sha}', '-f', f'path={comment["filepath"]}',
+                     '-F', f'line={comment["line"]}', '-f', 'side=RIGHT']
+              
+              try:
+                  result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                  success_count += 1
+                  print(f"  ✓ Success")
+              except subprocess.CalledProcessError as e:
+                  fail_count += 1
+                  print(f"  ✗ Failed")
+                  print(f"  Error: {e.stderr if e.stderr else 'Unknown error'}")
+          
+          print(f"\n{'='*60}")
+          print(f"Summary: {success_count} comments posted successfully, {fail_count} failed")
+          print(f"Total comments found: {len(comments)}")
+          print(f"Valid comments (in changed files): {len(valid_comments)}")
+          PYTHON_SCRIPT
       
       - name: Create Labels if Not Exist
         env:
@@ -264,3 +446,4 @@ jobs:
           # Apply labels to PR
           echo "Applying labels: $LABELS"
           gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABELS"
+
