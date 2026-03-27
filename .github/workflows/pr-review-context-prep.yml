@@ -196,6 +196,30 @@ jobs:
           INLINE_COUNT=$(grep -c "^INLINE|" bob_review_output.md || echo "0")
           echo "Found $INLINE_COUNT inline comments to post"
       
+      - name: Create Labels if Not Exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Define all possible labels with colors
+          declare -A LABEL_COLORS=(
+            ["bob-validated"]="0e8a16"
+            ["severity-critical"]="d73a4a"
+            ["severity-high"]="ff6b6b"
+            ["severity-medium"]="fbca04"
+            ["severity-low"]="d4c5f9"
+            ["fix-needed"]="ff9800"
+            ["security-review"]="b60205"
+            ["performance-review"]="1d76db"
+          )
+          
+          # Create each label if it doesn't exist
+          for label in "${!LABEL_COLORS[@]}"; do
+            color="${LABEL_COLORS[$label]}"
+            gh label create "$label" --color "$color" --force 2>/dev/null || true
+          done
+          
+          echo "Labels created/verified"
+      
       - name: Analyze Review and Apply Labels
         env:
           GH_TOKEN: ${{ github.token }}
